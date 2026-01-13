@@ -30,6 +30,11 @@ interface Review {
       suggestion?: string;
     }>;
     approval_recommendation: string;
+    _analysis?: {
+      depth: string;
+      priority: string;
+      reasons: string[];
+    };
   };
   head_sha: string;
   is_incremental: boolean;
@@ -156,9 +161,22 @@ export default function ReviewDetailPage() {
               {review.status}
             </Badge>
             {review.is_incremental && <Badge variant="outline" className="text-blue-400 border-blue-400">Incremental</Badge>}
+            {result?._analysis && (
+              <Badge variant="outline" className={
+                result._analysis.priority === "critical" ? "text-red-400 border-red-400" :
+                result._analysis.priority === "high" ? "text-orange-400 border-orange-400" :
+                result._analysis.priority === "medium" ? "text-yellow-400 border-yellow-400" :
+                "text-zinc-400 border-zinc-400"
+              }>
+                {result._analysis.depth} • {result._analysis.priority}
+              </Badge>
+            )}
           </h1>
           <p className="text-zinc-500 mt-1">
             {new Date(review.created_at).toLocaleString()} • Commit {review.head_sha?.slice(0, 7)}
+            {result?._analysis?.reasons && (
+              <span className="ml-2 text-xs">• {result._analysis.reasons.slice(0, 2).join(", ")}</span>
+            )}
           </p>
         </div>
         <div className="flex gap-2">

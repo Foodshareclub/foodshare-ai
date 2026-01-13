@@ -1,6 +1,6 @@
 import { chat } from "./llm";
 import { getPullRequest, getPullRequestDiff, createReview, getCompareCommits } from "./github";
-import { parseDiff, summarizeFiles, truncateDiff } from "./review/analyzer";
+import { parseDiff, summarizeFiles, truncateDiff, filterIgnoredPaths } from "./review/analyzer";
 import { SYSTEM_PROMPT, buildReviewPrompt, INCREMENTAL_SYSTEM_PROMPT, buildIncrementalPrompt } from "./review/prompts";
 import {
   CodeReviewResult,
@@ -12,6 +12,12 @@ import {
 import { createClient } from "./supabase/server";
 
 export type { CodeReviewResult as ReviewResult } from "./review/models";
+
+interface RepoConfig {
+  categories?: string[];
+  ignore_paths?: string[];
+  custom_instructions?: string;
+}
 
 async function getLastReviewedSha(fullName: string, prNumber: number): Promise<string | null> {
   const supabase = await createClient();
@@ -27,6 +33,16 @@ async function getLastReviewedSha(fullName: string, prNumber: number): Promise<s
   return data?.head_sha || null;
 }
 
+async function getRepoConfig(fullName: string): Promise<RepoConfig> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("repo_configs")
+    .select("categories, ignore_paths, custom_instructions")
+    .eq("full_name", fullName)
+    .single();
+  return data || {};
+}
+
 export async function reviewPullRequest(
   owner: string,
   repo: string,
@@ -36,7 +52,8 @@ export async function reviewPullRequest(
     ReviewCategory.BUG,
     ReviewCategory.PERFORMANCE,
   ],
-  lastReviewedSha?: string | null
+  lastReviewedSha?: string | null,
+  config?: RepoConfig
 ): Promise<CodeReviewResult & { headSha: string; isIncremental: boolean }> {
   const prData = await getPullRequest(owner, repo, prNumber);
   const headSha = prData.head.sha;
@@ -55,11 +72,22 @@ export async function reviewPullRequest(
     diff = await getPullRequestDiff(owner, repo, prNumber);
   }
 
-  const parsedFiles = parseDiff(diff);
+  let parsedFiles = parseDiff(diff);
+  
+  // Filter ignored paths
+  if (config?.ignore_paths?.length) {
+    parsedFiles = filterIgnoredPaths(parsedFiles, config.ignore_paths);
+  }
+
   const filesSummary = summarizeFiles(parsedFiles);
   const truncatedDiff = truncateDiff(diff, 2000);
 
-  const systemPrompt = isIncremental ? INCREMENTAL_SYSTEM_PROMPT : SYSTEM_PROMPT;
+  // Build prompt with custom instructions
+  let systemPrompt = isIncremental ? INCREMENTAL_SYSTEM_PROMPT : SYSTEM_PROMPT;
+  if (config?.custom_instructions) {
+    systemPrompt += `\n\n## Custom Instructions\n${config.custom_instructions}`;
+  }
+
   const prompt = isIncremental
     ? buildIncrementalPrompt(prData.title, filesSummary, truncatedDiff, categories)
     : buildReviewPrompt(prData.title, prData.body || "", filesSummary, truncatedDiff, categories);
@@ -178,9 +206,16 @@ export async function reviewAndPost(
   categories?: ReviewCategory[]
 ): Promise<{ review: CodeReviewResult; posted: boolean; headSha: string; isIncremental: boolean }> {
   const fullName = `${owner}/${repo}`;
-  const lastReviewedSha = await getLastReviewedSha(fullName, prNumber);
+  const [lastReviewedSha, config] = await Promise.all([
+    getLastReviewedSha(fullName, prNumber),
+    getRepoConfig(fullName),
+  ]);
 
-  const result = await reviewPullRequest(owner, repo, prNumber, categories, lastReviewedSha);
+  const reviewCategories = categories || 
+    (config.categories?.map((c) => c as ReviewCategory)) ||
+    [ReviewCategory.SECURITY, ReviewCategory.BUG, ReviewCategory.PERFORMANCE];
+
+  const result = await reviewPullRequest(owner, repo, prNumber, reviewCategories, lastReviewedSha, config);
   const { headSha, isIncremental, ...review } = result;
 
   const body = formatReviewBody(review, isIncremental);

@@ -104,6 +104,19 @@ export function summarizeFiles(files: FileDiff[]): string {
   return lines.length > 0 ? lines.join("\n") : "No files changed";
 }
 
+export function filterIgnoredPaths(files: FileDiff[], ignorePaths: string[]): FileDiff[] {
+  if (!ignorePaths.length) return files;
+  return files.filter((f) => {
+    return !ignorePaths.some((pattern) => {
+      if (pattern.includes("*")) {
+        const regex = new RegExp("^" + pattern.replace(/\*/g, ".*") + "$");
+        return regex.test(f.path);
+      }
+      return f.path.startsWith(pattern) || f.path.includes(pattern);
+    });
+  });
+}
+
 // Files to skip entirely (auto-generated, lock files)
 const SKIP_FILES = new Set([
   "Cargo.lock",

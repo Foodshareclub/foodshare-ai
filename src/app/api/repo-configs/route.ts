@@ -14,7 +14,14 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { full_name, enabled = true, auto_review = true, categories } = body;
+  const { 
+    full_name, 
+    enabled = true, 
+    auto_review = true, 
+    categories,
+    ignore_paths = [],
+    custom_instructions = ""
+  } = body;
 
   if (!full_name) {
     return NextResponse.json({ error: "full_name required" }, { status: 400 });
@@ -23,7 +30,15 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("repo_configs")
-    .upsert({ full_name, enabled, auto_review, categories, updated_at: new Date().toISOString() })
+    .upsert({ 
+      full_name, 
+      enabled, 
+      auto_review, 
+      categories, 
+      ignore_paths,
+      custom_instructions,
+      updated_at: new Date().toISOString() 
+    })
     .select()
     .single();
 

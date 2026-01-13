@@ -33,3 +33,4 @@ __pycache__/
 .venv/
 _archive/
 .vercel
+.env.prod

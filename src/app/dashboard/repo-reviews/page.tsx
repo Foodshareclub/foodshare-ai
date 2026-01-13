@@ -12,6 +12,8 @@ interface RepoConfig {
   enabled: boolean;
   auto_review: boolean;
   categories: string[];
+  ignore_paths: string[];
+  custom_instructions: string;
   created_at: string;
 }
 
@@ -35,6 +37,9 @@ export default function RepoReviewsPage() {
   const [triggerRepo, setTriggerRepo] = useState("");
   const [triggerPR, setTriggerPR] = useState("");
   const [triggering, setTriggering] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<string | null>(null);
+  const [editIgnorePaths, setEditIgnorePaths] = useState("");
+  const [editInstructions, setEditInstructions] = useState("");
 
   const fetchData = async () => {
     const [configsRes, historyRes] = await Promise.all([
@@ -95,6 +100,26 @@ export default function RepoReviewsPage() {
 
   const removeRepo = async (full_name: string) => {
     await fetch(`/api/repo-configs?full_name=${encodeURIComponent(full_name)}`, { method: "DELETE" });
+    fetchData();
+  };
+
+  const startEditing = (config: RepoConfig) => {
+    setEditingConfig(config.id);
+    setEditIgnorePaths((config.ignore_paths || []).join("\n"));
+    setEditInstructions(config.custom_instructions || "");
+  };
+
+  const saveConfig = async (config: RepoConfig) => {
+    await fetch("/api/repo-configs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...config,
+        ignore_paths: editIgnorePaths.split("\n").filter(Boolean),
+        custom_instructions: editInstructions,
+      }),
+    });
+    setEditingConfig(null);
     fetchData();
   };
 
@@ -252,6 +277,40 @@ export default function RepoReviewsPage() {
                   ))}
                 </div>
               </div>
+
+              {/* Advanced Settings */}
+              {editingConfig === config.id ? (
+                <div className="space-y-3 pt-3 border-t">
+                  <div>
+                    <label className="text-sm font-medium">Ignore Paths (one per line)</label>
+                    <textarea
+                      className="w-full mt-1 p-2 text-sm bg-background border rounded-md"
+                      rows={3}
+                      placeholder="*.test.ts&#10;docs/*&#10;*.md"
+                      value={editIgnorePaths}
+                      onChange={(e) => setEditIgnorePaths(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Custom Instructions</label>
+                    <textarea
+                      className="w-full mt-1 p-2 text-sm bg-background border rounded-md"
+                      rows={3}
+                      placeholder="Focus on TypeScript best practices. Ignore styling issues."
+                      value={editInstructions}
+                      onChange={(e) => setEditInstructions(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => saveConfig(config)}>Save</Button>
+                    <Button size="sm" variant="outline" onClick={() => setEditingConfig(null)}>Cancel</Button>
+                  </div>
+                </div>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => startEditing(config)} className="mt-2">
+                  ⚙️ Advanced Settings
+                </Button>
+              )}
             </CardContent>
           </Card>
         ))}

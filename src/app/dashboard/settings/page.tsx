@@ -125,7 +125,7 @@ export default function SettingsPage() {
               {ollamaStatus?.host && (
                 <p className="text-xs text-zinc-500 mt-2">Host: {ollamaStatus.host}</p>
               )}
-              {ollamaStatus?.models?.length > 0 && (
+              {ollamaStatus?.models && ollamaStatus.models.length > 0 && (
                 <div className="flex gap-1 mt-2">
                   {ollamaStatus.models.map(m => (
                     <Badge key={m} variant="outline" className="text-xs">{m}</Badge>

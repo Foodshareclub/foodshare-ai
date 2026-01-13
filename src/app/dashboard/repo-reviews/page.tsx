@@ -20,7 +20,7 @@ interface ReviewHistory {
   repo_full_name: string;
   pr_number: number;
   status: string;
-  result: string | null;
+  is_incremental: boolean;
   created_at: string;
 }
 
@@ -113,13 +113,18 @@ export default function RepoReviewsPage() {
     fetchData();
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, isIncremental?: boolean) => {
     const variants: Record<string, "default" | "secondary" | "destructive"> = {
       completed: "default",
       pending: "secondary",
       failed: "destructive",
     };
-    return <Badge variant={variants[status] || "secondary"}>{status}</Badge>;
+    return (
+      <div className="flex gap-1">
+        <Badge variant={variants[status] || "secondary"}>{status}</Badge>
+        {isIncremental && <Badge variant="outline">incremental</Badge>}
+      </div>
+    );
   };
 
   if (loading) return <div className="p-8">Loading...</div>;
@@ -128,7 +133,31 @@ export default function RepoReviewsPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold">🤖 AI Code Reviews</h2>
-        <p className="text-gray-500">Configure automatic PR reviews per repository</p>
+        <p className="text-muted-foreground">CodeRabbit-style automated PR reviews</p>
+      </div>
+
+      {/* Features */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="p-4">
+          <div className="text-2xl mb-1">🔍</div>
+          <div className="font-medium">Smart Review</div>
+          <div className="text-xs text-muted-foreground">Security, bugs, performance</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-2xl mb-1">🔄</div>
+          <div className="font-medium">Incremental</div>
+          <div className="text-xs text-muted-foreground">Only new changes</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-2xl mb-1">💬</div>
+          <div className="font-medium">Interactive</div>
+          <div className="text-xs text-muted-foreground">Reply @ai for help</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-2xl mb-1">📝</div>
+          <div className="font-medium">Walkthrough</div>
+          <div className="text-xs text-muted-foreground">File-by-file summary</div>
+        </Card>
       </div>
 
       {/* Manual Trigger */}
@@ -227,7 +256,7 @@ export default function RepoReviewsPage() {
           </Card>
         ))}
         {configs.length === 0 && (
-          <p className="text-gray-500 text-center py-8">No repositories configured yet</p>
+          <p className="text-muted-foreground text-center py-8">No repositories configured yet</p>
         )}
       </div>
 
@@ -238,7 +267,7 @@ export default function RepoReviewsPage() {
           <CardContent className="p-0">
             <table className="w-full">
               <thead className="border-b">
-                <tr className="text-left text-sm text-gray-500">
+                <tr className="text-left text-sm text-muted-foreground">
                   <th className="p-3">Repository</th>
                   <th className="p-3">PR</th>
                   <th className="p-3">Status</th>
@@ -250,15 +279,15 @@ export default function RepoReviewsPage() {
                   <tr key={h.id} className="border-b last:border-0">
                     <td className="p-3 font-medium">{h.repo_full_name}</td>
                     <td className="p-3">#{h.pr_number}</td>
-                    <td className="p-3">{getStatusBadge(h.status)}</td>
-                    <td className="p-3 text-sm text-gray-500">
+                    <td className="p-3">{getStatusBadge(h.status, h.is_incremental)}</td>
+                    <td className="p-3 text-sm text-muted-foreground">
                       {new Date(h.created_at).toLocaleString()}
                     </td>
                   </tr>
                 ))}
                 {history.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="p-8 text-center text-gray-500">
+                    <td colSpan={4} className="p-8 text-center text-muted-foreground">
                       No reviews yet
                     </td>
                   </tr>

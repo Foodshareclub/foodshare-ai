@@ -68,6 +68,22 @@ export async function createReview(
   return res.json();
 }
 
+export async function createReviewComment(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  body: string,
+  inReplyTo: number
+) {
+  const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/comments`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify({ body, in_reply_to: inReplyTo }),
+  });
+  if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
+  return res.json();
+}
+
 export async function listUserRepos() {
   const res = await fetch(`${GITHUB_API}/user/repos?per_page=100&sort=updated`, {
     headers: getHeaders(),

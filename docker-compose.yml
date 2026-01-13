@@ -1,0 +1,17 @@
+services:
+  foodshare-ai:
+    build: .
+    env_file:
+      - .env
+      - .env.local
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - cloudflared
+
+networks:
+  cloudflared:
+    external: true

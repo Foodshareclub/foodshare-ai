@@ -138,6 +138,19 @@ const PERFORMANCE_FOCUS = `
 - Inefficient algorithms
 `;
 
+const BEST_PRACTICES_FOCUS = `
+- SOLID principles adherence
+- DRY (Don't Repeat Yourself) violations
+- Proper error handling and logging
+- TypeScript best practices (strict typing, no any)
+- Clean code principles (naming, single responsibility)
+- Code organization and modularity
+- Proper async/await usage
+- Accessibility compliance (a11y)
+- Testing considerations
+- Documentation and comments where needed
+`;
+
 export function truncateDescription(description: string, maxChars: number = 1000): string {
   if (!description) {
     return "No description provided";
@@ -157,6 +170,7 @@ export function buildReviewPrompt(
     ReviewCategory.SECURITY,
     ReviewCategory.BUG,
     ReviewCategory.PERFORMANCE,
+    ReviewCategory.BEST_PRACTICES,
   ]
 ): string {
   const focusParts: string[] = [];
@@ -169,6 +183,9 @@ export function buildReviewPrompt(
   }
   if (categories.includes(ReviewCategory.PERFORMANCE)) {
     focusParts.push(PERFORMANCE_FOCUS);
+  }
+  if (categories.includes(ReviewCategory.BEST_PRACTICES)) {
+    focusParts.push(BEST_PRACTICES_FOCUS);
   }
 
   return REVIEW_PROMPT_TEMPLATE
@@ -206,6 +223,7 @@ export function buildIncrementalPrompt(
     ReviewCategory.SECURITY,
     ReviewCategory.BUG,
     ReviewCategory.PERFORMANCE,
+    ReviewCategory.BEST_PRACTICES,
   ]
 ): string {
   const focusParts: string[] = [];
@@ -218,6 +236,9 @@ export function buildIncrementalPrompt(
   }
   if (categories.includes(ReviewCategory.PERFORMANCE)) {
     focusParts.push(PERFORMANCE_FOCUS);
+  }
+  if (categories.includes(ReviewCategory.BEST_PRACTICES)) {
+    focusParts.push(BEST_PRACTICES_FOCUS);
   }
 
   return INCREMENTAL_PROMPT_TEMPLATE

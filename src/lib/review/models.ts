@@ -10,6 +10,7 @@ export enum ReviewCategory {
   SECURITY = "security",
   BUG = "bug",
   PERFORMANCE = "performance",
+  BEST_PRACTICES = "best_practices",
   STYLE = "style",
   SUGGESTION = "suggestion",
   DEPENDENCY = "dependency",

@@ -3,7 +3,7 @@ export async function chatWithOllama(
   options?: { model?: string; temperature?: number }
 ): Promise<string> {
   const host = process.env.OLLAMA_HOST || "http://localhost:11434";
-  const model = options?.model || process.env.OLLAMA_MODEL || "llama3.2:3b";
+  const model = options?.model || process.env.OLLAMA_MODEL || "qwen2.5-coder:7b";
   const temperature = options?.temperature ?? 0.1;
 
   const headers: HeadersInit = { "Content-Type": "application/json" };

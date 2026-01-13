@@ -53,7 +53,8 @@ export async function reviewPullRequest(
     ReviewCategory.PERFORMANCE,
   ],
   lastReviewedSha?: string | null,
-  config?: RepoConfig
+  config?: RepoConfig,
+  options?: { depth?: "quick" | "standard" | "deep"; focus_areas?: string[] }
 ): Promise<CodeReviewResult & { headSha: string; isIncremental: boolean }> {
   const prData = await getPullRequest(owner, repo, prNumber);
   const headSha = prData.head.sha;
@@ -82,10 +83,18 @@ export async function reviewPullRequest(
   const filesSummary = summarizeFiles(parsedFiles);
   const truncatedDiff = truncateDiff(diff, 2000);
 
-  // Build prompt with custom instructions
+  // Build prompt with custom instructions and depth
   let systemPrompt = isIncremental ? INCREMENTAL_SYSTEM_PROMPT : SYSTEM_PROMPT;
   if (config?.custom_instructions) {
     systemPrompt += `\n\n## Custom Instructions\n${config.custom_instructions}`;
+  }
+  if (options?.depth === "quick") {
+    systemPrompt += "\n\nBe concise. Focus only on critical issues.";
+  } else if (options?.depth === "deep") {
+    systemPrompt += "\n\nBe thorough. Check edge cases, error handling, and subtle bugs.";
+  }
+  if (options?.focus_areas?.length) {
+    systemPrompt += `\n\nPrioritize: ${options.focus_areas.join(", ")}`;
   }
 
   const prompt = isIncremental
@@ -203,7 +212,8 @@ export async function reviewAndPost(
   owner: string,
   repo: string,
   prNumber: number,
-  categories?: ReviewCategory[]
+  categories?: ReviewCategory[],
+  options?: { depth?: "quick" | "standard" | "deep"; focus_areas?: string[] }
 ): Promise<{ review: CodeReviewResult; posted: boolean; headSha: string; isIncremental: boolean }> {
   const fullName = `${owner}/${repo}`;
   const [lastReviewedSha, config] = await Promise.all([
@@ -215,7 +225,7 @@ export async function reviewAndPost(
     (config.categories?.map((c) => c as ReviewCategory)) ||
     [ReviewCategory.SECURITY, ReviewCategory.BUG, ReviewCategory.PERFORMANCE];
 
-  const result = await reviewPullRequest(owner, repo, prNumber, reviewCategories, lastReviewedSha, config);
+  const result = await reviewPullRequest(owner, repo, prNumber, reviewCategories, lastReviewedSha, config, options);
   const { headSha, isIncremental, ...review } = result;
 
   const body = formatReviewBody(review, isIncremental);

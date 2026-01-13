@@ -5,6 +5,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const limit = parseInt(searchParams.get("limit") || "20");
   const repo = searchParams.get("repo");
+  const pr = searchParams.get("pr");
 
   const supabase = await createClient();
   
@@ -16,6 +17,9 @@ export async function GET(request: NextRequest) {
 
   if (repo) {
     query = query.eq("repo_full_name", repo);
+  }
+  if (pr) {
+    query = query.eq("pr_number", parseInt(pr));
   }
 
   const { data, error } = await query;

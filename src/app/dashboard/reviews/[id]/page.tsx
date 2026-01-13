@@ -40,15 +40,25 @@ export default function ReviewDetailPage() {
   const params = useParams();
   const router = useRouter();
   const [review, setReview] = useState<Review | null>(null);
+  const [previousReviews, setPreviousReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [rerunning, setRerunning] = useState(false);
-  const [activeTab, setActiveTab] = useState<"summary" | "issues" | "files">("summary");
+  const [activeTab, setActiveTab] = useState<"summary" | "issues" | "files" | "history">("summary");
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [filterSeverity, setFilterSeverity] = useState<string>("all");
 
   useEffect(() => {
     fetch(`/api/reviews/${params.id}`)
       .then(r => r.json())
-      .then(data => setReview(data.review))
+      .then(data => {
+        setReview(data.review);
+        // Fetch previous reviews for this PR
+        if (data.review) {
+          fetch(`/api/reviews?repo=${data.review.repo_full_name}&pr=${data.review.pr_number}&limit=10`)
+            .then(r => r.json())
+            .then(d => setPreviousReviews((d.reviews || []).filter((r: Review) => r.id !== data.review.id)));
+        }
+      })
       .finally(() => setLoading(false));
   }, [params.id]);
 
@@ -195,7 +205,7 @@ export default function ReviewDetailPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-zinc-800">
-        {(["summary", "issues", "files"] as const).map(tab => (
+        {(["summary", "issues", "files", "history"] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -206,6 +216,7 @@ export default function ReviewDetailPage() {
             {tab === "summary" && "📋 Summary"}
             {tab === "issues" && `🔍 Issues (${result?.line_comments?.length || 0})`}
             {tab === "files" && `📁 Files (${result?.walkthrough?.length || 0})`}
+            {tab === "history" && `🕐 History (${previousReviews.length})`}
           </button>
         ))}
       </div>
@@ -360,6 +371,52 @@ export default function ReviewDetailPage() {
                 </CardContent>
               </Card>
             ))
+          )}
+        </div>
+      )}
+
+      {activeTab === "history" && (
+        <div className="space-y-4">
+          {previousReviews.length === 0 ? (
+            <Card className="bg-zinc-900 border-zinc-800">
+              <CardContent className="py-12 text-center">
+                <p className="text-zinc-500">No previous reviews for this PR</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              <p className="text-sm text-zinc-500">Compare with previous reviews of this PR</p>
+              {previousReviews.map((prev, i) => {
+                const prevIssues = prev.result?.line_comments?.length || 0;
+                const currentIssues = result?.line_comments?.length || 0;
+                const diff = currentIssues - prevIssues;
+                return (
+                  <Link key={prev.id} href={`/dashboard/reviews/${prev.id}`}>
+                    <Card className="bg-zinc-900 border-zinc-800 hover:border-zinc-700 cursor-pointer">
+                      <CardContent className="py-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm text-white">{new Date(prev.created_at).toLocaleString()}</div>
+                            <div className="text-xs text-zinc-500">Commit {prev.head_sha?.slice(0, 7)}</div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              <div className="text-sm text-zinc-400">{prevIssues} issues</div>
+                              {diff !== 0 && (
+                                <div className={`text-xs ${diff > 0 ? "text-red-400" : "text-emerald-400"}`}>
+                                  {diff > 0 ? `+${diff}` : diff} vs current
+                                </div>
+                              )}
+                            </div>
+                            <span className="text-zinc-600">→</span>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                );
+              })}
+            </>
           )}
         </div>
       )}

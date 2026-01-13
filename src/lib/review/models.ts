@@ -24,6 +24,13 @@ export interface LineComment {
   severity: Severity | string;
   category: ReviewCategory | string;
   start_line?: number;
+  suggestion?: string;
+}
+
+export interface FileWalkthrough {
+  path: string;
+  summary: string;
+  changes: string[];
 }
 
 export interface ReviewSummary {
@@ -31,10 +38,12 @@ export interface ReviewSummary {
   changes_description: string;
   risk_assessment: string;
   recommendations: string[];
+  praise?: string[];
 }
 
 export interface CodeReviewResult {
   summary: ReviewSummary;
+  walkthrough: FileWalkthrough[];
   line_comments: LineComment[];
   approval_recommendation: "approve" | "request_changes" | "comment";
 }

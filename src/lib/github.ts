@@ -24,6 +24,22 @@ export async function getPullRequestDiff(owner: string, repo: string, prNumber: 
   return res.text();
 }
 
+export async function getCompareCommits(owner: string, repo: string, base: string, head: string) {
+  const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/compare/${base}...${head}`, {
+    headers: { ...getHeaders(), Accept: "application/vnd.github.v3.diff" },
+  });
+  if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
+  return res.text();
+}
+
+export async function getPullRequestCommits(owner: string, repo: string, prNumber: number) {
+  const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/commits`, {
+    headers: getHeaders(),
+  });
+  if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
+  return res.json();
+}
+
 export async function getPullRequestFiles(owner: string, repo: string, prNumber: number) {
   const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/files`, {
     headers: getHeaders(),

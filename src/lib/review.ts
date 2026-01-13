@@ -1,16 +1,31 @@
 import { chat } from "./llm";
-import { getPullRequest, getPullRequestDiff, createReview } from "./github";
+import { getPullRequest, getPullRequestDiff, createReview, getCompareCommits } from "./github";
 import { parseDiff, summarizeFiles, truncateDiff } from "./review/analyzer";
-import { SYSTEM_PROMPT, buildReviewPrompt } from "./review/prompts";
+import { SYSTEM_PROMPT, buildReviewPrompt, INCREMENTAL_SYSTEM_PROMPT, buildIncrementalPrompt } from "./review/prompts";
 import {
   CodeReviewResult,
   ReviewCategory,
   parseCategory,
   parseSeverity,
+  FileWalkthrough,
 } from "./review/models";
+import { createClient } from "./supabase/server";
 
-// Re-export types for convenience
 export type { CodeReviewResult as ReviewResult } from "./review/models";
+
+async function getLastReviewedSha(fullName: string, prNumber: number): Promise<string | null> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("review_history")
+    .select("head_sha")
+    .eq("repo_full_name", fullName)
+    .eq("pr_number", prNumber)
+    .eq("status", "completed")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+  return data?.head_sha || null;
+}
 
 export async function reviewPullRequest(
   owner: string,
@@ -20,34 +35,38 @@ export async function reviewPullRequest(
     ReviewCategory.SECURITY,
     ReviewCategory.BUG,
     ReviewCategory.PERFORMANCE,
-  ]
-): Promise<CodeReviewResult> {
-  const [prData, diff] = await Promise.all([
-    getPullRequest(owner, repo, prNumber),
-    getPullRequestDiff(owner, repo, prNumber),
-  ]);
+  ],
+  lastReviewedSha?: string | null
+): Promise<CodeReviewResult & { headSha: string; isIncremental: boolean }> {
+  const prData = await getPullRequest(owner, repo, prNumber);
+  const headSha = prData.head.sha;
 
-  // Parse and analyze the diff
+  let diff: string;
+  let isIncremental = false;
+
+  if (lastReviewedSha && lastReviewedSha !== headSha) {
+    try {
+      diff = await getCompareCommits(owner, repo, lastReviewedSha, headSha);
+      isIncremental = true;
+    } catch {
+      diff = await getPullRequestDiff(owner, repo, prNumber);
+    }
+  } else {
+    diff = await getPullRequestDiff(owner, repo, prNumber);
+  }
+
   const parsedFiles = parseDiff(diff);
   const filesSummary = summarizeFiles(parsedFiles);
-  const truncatedDiff = truncateDiff(diff, 1000); // ~4000 chars
+  const truncatedDiff = truncateDiff(diff, 2000);
 
-  // Build the review prompt with category-specific focus
-  const prompt = buildReviewPrompt(
-    prData.title,
-    prData.body || "",
-    filesSummary,
-    truncatedDiff,
-    categories
-  );
+  const systemPrompt = isIncremental ? INCREMENTAL_SYSTEM_PROMPT : SYSTEM_PROMPT;
+  const prompt = isIncremental
+    ? buildIncrementalPrompt(prData.title, filesSummary, truncatedDiff, categories)
+    : buildReviewPrompt(prData.title, prData.body || "", filesSummary, truncatedDiff, categories);
 
-  // Call LLM with system prompt and review model
-  const response = await chat(`${SYSTEM_PROMPT}\n\n${prompt}`, {
-    useReviewModel: true,
-  });
+  const response = await chat(`${systemPrompt}\n\n${prompt}`, { useReviewModel: true });
 
   try {
-    // Extract JSON from response
     let json = response.trim();
     if (json.includes("```json")) {
       json = json.split("```json")[1].split("```")[0];
@@ -57,7 +76,6 @@ export async function reviewPullRequest(
 
     const parsed = JSON.parse(json.trim());
 
-    // Normalize severity and category values
     const lineComments = (parsed.line_comments || []).map((c: Record<string, unknown>) => ({
       path: String(c.path || ""),
       line: Number(c.line || 0),
@@ -65,6 +83,13 @@ export async function reviewPullRequest(
       severity: parseSeverity(String(c.severity || "medium")),
       category: parseCategory(String(c.category || "other")),
       start_line: c.start_line ? Number(c.start_line) : undefined,
+      suggestion: c.suggestion ? String(c.suggestion) : undefined,
+    }));
+
+    const walkthrough: FileWalkthrough[] = (parsed.walkthrough || []).map((w: Record<string, unknown>) => ({
+      path: String(w.path || ""),
+      summary: String(w.summary || ""),
+      changes: Array.isArray(w.changes) ? w.changes.map(String) : [],
     }));
 
     return {
@@ -73,9 +98,13 @@ export async function reviewPullRequest(
         changes_description: parsed.summary?.changes_description || "",
         risk_assessment: parsed.summary?.risk_assessment || "Unknown",
         recommendations: parsed.summary?.recommendations || [],
+        praise: parsed.summary?.praise || [],
       },
+      walkthrough,
       line_comments: lineComments,
       approval_recommendation: parsed.approval_recommendation || "comment",
+      headSha,
+      isIncremental,
     };
   } catch {
     return {
@@ -85,30 +114,76 @@ export async function reviewPullRequest(
         risk_assessment: "Unknown",
         recommendations: ["Manual review recommended"],
       },
+      walkthrough: [],
       line_comments: [],
       approval_recommendation: "comment",
+      headSha,
+      isIncremental,
     };
   }
+}
+
+function formatReviewBody(review: CodeReviewResult, isIncremental: boolean): string {
+  const sections: string[] = [];
+
+  sections.push(isIncremental ? "## 🔄 Incremental Review\n" : "## 🤖 AI Code Review\n");
+
+  if (isIncremental) {
+    sections.push("*Reviewing only new changes since last review*\n");
+  }
+
+  sections.push(`### Summary\n${review.summary.overview}\n`);
+  sections.push(`**Changes:** ${review.summary.changes_description}\n`);
+  sections.push(`**Risk Level:** ${review.summary.risk_assessment}\n`);
+
+  if (review.summary.praise?.length) {
+    sections.push("### ✨ What's Good\n");
+    sections.push(review.summary.praise.map((p) => `- ${p}`).join("\n") + "\n");
+  }
+
+  if (review.walkthrough.length > 0) {
+    sections.push("### 📝 Walkthrough\n");
+    sections.push("<details><summary>File changes</summary>\n");
+    for (const file of review.walkthrough) {
+      sections.push(`\n**${file.path}**\n${file.summary}`);
+      if (file.changes.length > 0) {
+        sections.push(file.changes.map((c) => `- ${c}`).join("\n"));
+      }
+    }
+    sections.push("\n</details>\n");
+  }
+
+  if (review.summary.recommendations.length > 0) {
+    sections.push("### 📋 Recommendations\n");
+    sections.push(review.summary.recommendations.map((r) => `- ${r}`).join("\n") + "\n");
+  }
+
+  const criticalCount = review.line_comments.filter((c) => c.severity === "critical").length;
+  const highCount = review.line_comments.filter((c) => c.severity === "high").length;
+  const otherCount = review.line_comments.length - criticalCount - highCount;
+
+  sections.push("---");
+  sections.push(`📊 **${review.line_comments.length} comments** `);
+  if (criticalCount > 0) sections.push(`| 🔴 ${criticalCount} critical `);
+  if (highCount > 0) sections.push(`| 🟠 ${highCount} high `);
+  if (otherCount > 0) sections.push(`| 🟡 ${otherCount} other`);
+
+  return sections.join("\n");
 }
 
 export async function reviewAndPost(
   owner: string,
   repo: string,
-  prNumber: number
-): Promise<{ review: CodeReviewResult; posted: boolean }> {
-  const review = await reviewPullRequest(owner, repo, prNumber);
+  prNumber: number,
+  categories?: ReviewCategory[]
+): Promise<{ review: CodeReviewResult; posted: boolean; headSha: string; isIncremental: boolean }> {
+  const fullName = `${owner}/${repo}`;
+  const lastReviewedSha = await getLastReviewedSha(fullName, prNumber);
 
-  const body = `## AI Code Review
+  const result = await reviewPullRequest(owner, repo, prNumber, categories, lastReviewedSha);
+  const { headSha, isIncremental, ...review } = result;
 
-**Overview:** ${review.summary.overview}
-
-**Risk:** ${review.summary.risk_assessment}
-
-### Recommendations
-${review.summary.recommendations.map((r) => `- ${r}`).join("\n")}
-
----
-*Found ${review.line_comments.length} issues*`;
+  const body = formatReviewBody(review, isIncremental);
 
   const eventMap = {
     approve: "APPROVE" as const,
@@ -116,13 +191,15 @@ ${review.summary.recommendations.map((r) => `- ${r}`).join("\n")}
     comment: "COMMENT" as const,
   };
 
-  const comments = review.line_comments.map((c) => ({
-    path: c.path,
-    line: c.line,
-    body: `**[${c.severity.toUpperCase()}]** ${c.body}`,
-  }));
+  const comments = review.line_comments.map((c) => {
+    let commentBody = `**[${c.severity.toString().toUpperCase()}]** ${c.body}`;
+    if (c.suggestion) {
+      commentBody += `\n\n\`\`\`suggestion\n${c.suggestion}\n\`\`\``;
+    }
+    return { path: c.path, line: c.line, body: commentBody };
+  });
 
   await createReview(owner, repo, prNumber, body, eventMap[review.approval_recommendation], comments);
 
-  return { review, posted: true };
+  return { review, posted: true, headSha, isIncremental };
 }

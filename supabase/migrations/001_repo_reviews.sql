@@ -16,7 +16,10 @@ create table if not exists review_history (
   pr_number int not null,
   status text not null, -- 'pending', 'completed', 'failed'
   result jsonb,
+  head_sha text, -- commit SHA at time of review
+  is_incremental boolean default false,
   created_at timestamptz default now()
 );
 
 create index if not exists idx_review_history_repo on review_history(repo_full_name);
+create index if not exists idx_review_history_pr on review_history(repo_full_name, pr_number);

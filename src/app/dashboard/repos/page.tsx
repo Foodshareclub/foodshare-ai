@@ -1,209 +1,198 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
-interface Repo {
-  id: number;
-  name: string;
+interface RepoConfig {
+  id: string;
   full_name: string;
-  description: string | null;
-  open_issues_count: number;
-  stargazers_count: number;
-  language: string | null;
-  updated_at: string;
-}
-
-interface PullRequest {
-  number: number;
-  title: string;
-  state: string;
-  user: { login: string };
+  enabled: boolean;
+  auto_review: boolean;
+  categories: string[];
+  ignore_paths: string[];
+  custom_instructions: string;
   created_at: string;
-  updated_at: string;
 }
 
 export default function ReposPage() {
-  const [orgInput, setOrgInput] = useState("Foodshareclub");
-  const [org, setOrg] = useState("Foodshareclub");
-  const [repos, setRepos] = useState<Repo[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedRepo, setSelectedRepo] = useState<Repo | null>(null);
-  const [pulls, setPulls] = useState<PullRequest[]>([]);
-  const [loadingPulls, setLoadingPulls] = useState(false);
+  const [repos, setRepos] = useState<RepoConfig[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newRepo, setNewRepo] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  const fetchRepos = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/repos?org=${org}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setRepos(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch repos");
-    } finally {
-      setLoading(false);
-    }
+  const fetchRepos = () => {
+    fetch("/api/repos/config")
+      .then(r => r.json())
+      .then(data => setRepos(data.configs || []))
+      .finally(() => setLoading(false));
   };
 
-  const fetchPulls = async (repo: Repo) => {
-    setSelectedRepo(repo);
-    setLoadingPulls(true);
-    try {
-      const [owner, repoName] = repo.full_name.split("/");
-      const res = await fetch(`/api/pulls?owner=${owner}&repo=${repoName}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setPulls(data);
-    } catch (err) {
-      console.error("Failed to fetch pulls:", err);
-      setPulls([]);
-    } finally {
-      setLoadingPulls(false);
-    }
-  };
+  useEffect(() => { fetchRepos(); }, []);
 
-  useEffect(() => {
+  const addRepo = async () => {
+    if (!newRepo.includes("/")) return;
+    setAdding(true);
+    await fetch("/api/repos/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ full_name: newRepo }),
+    });
+    setNewRepo("");
     fetchRepos();
-  }, [org]);
+    setAdding(false);
+  };
+
+  const toggleRepo = async (id: string, field: "enabled" | "auto_review", value: boolean) => {
+    await fetch(`/api/repos/config/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: value }),
+    });
+    fetchRepos();
+  };
+
+  const deleteRepo = async (id: string) => {
+    if (!confirm("Remove this repository?")) return;
+    await fetch(`/api/repos/config/${id}`, { method: "DELETE" });
+    fetchRepos();
+  };
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-64 text-zinc-500">Loading...</div>;
+  }
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold">Repositories</h2>
-        <p className="text-gray-500">Browse and review pull requests</p>
+        <h1 className="text-2xl font-bold text-white">Repositories</h1>
+        <p className="text-zinc-500">Manage repositories for AI code review</p>
       </div>
 
-      <div className="flex gap-2">
-        <Input
-          placeholder="Organization name"
-          value={orgInput}
-          onChange={(e) => setOrgInput(e.target.value)}
-          className="max-w-xs"
-        />
-        <Button onClick={() => setOrg(orgInput)} disabled={loading}>
-          {loading ? "Loading..." : "Load Repos"}
-        </Button>
-      </div>
+      {/* Add Repo */}
+      <Card className="bg-zinc-900 border-zinc-800">
+        <CardHeader>
+          <CardTitle className="text-white">Add Repository</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2">
+            <input
+              placeholder="owner/repo (e.g., Foodshareclub/foodshare-ai)"
+              value={newRepo}
+              onChange={e => setNewRepo(e.target.value)}
+              className="flex-1 px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+              onKeyDown={e => e.key === "Enter" && addRepo()}
+            />
+            <Button onClick={addRepo} disabled={adding || !newRepo.includes("/")} className="bg-emerald-600 hover:bg-emerald-700">
+              {adding ? "Adding..." : "Add"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
-      {error && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="pt-6">
-            <p className="text-red-600">{error}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {repos.map((repo) => (
-          <Card
-            key={repo.id}
-            className={`cursor-pointer transition-colors hover:border-blue-300 ${
-              selectedRepo?.id === repo.id ? "border-blue-500" : ""
-            }`}
-            onClick={() => fetchPulls(repo)}
-          >
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg">{repo.name}</CardTitle>
-              <CardDescription className="line-clamp-2">
-                {repo.description || "No description"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2 flex-wrap">
-                {repo.language && (
-                  <Badge variant="outline">{repo.language}</Badge>
-                )}
-                <Badge variant="secondary">{repo.open_issues_count} issues</Badge>
-              </div>
+      {/* Repos List */}
+      <div className="space-y-4">
+        {repos.length === 0 ? (
+          <Card className="bg-zinc-900 border-zinc-800">
+            <CardContent className="py-12 text-center">
+              <p className="text-zinc-500 mb-2">No repositories configured</p>
+              <p className="text-sm text-zinc-600">Add a repository above to enable AI code reviews</p>
             </CardContent>
           </Card>
-        ))}
-      </div>
-
-      {selectedRepo && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Pull Requests - {selectedRepo.name}</CardTitle>
-            <CardDescription>
-              {loadingPulls ? "Loading..." : `${pulls.length} open PRs`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {pulls.length === 0 && !loadingPulls ? (
-              <p className="text-gray-500">No open pull requests</p>
-            ) : (
-              <div className="space-y-2">
-                {pulls.map((pr) => (
-                  <div
-                    key={pr.number}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-md"
-                  >
+        ) : (
+          repos.map(repo => (
+            <Card key={repo.id} className="bg-zinc-900 border-zinc-800">
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <span className="text-2xl">📁</span>
                     <div>
-                      <span className="font-medium">#{pr.number}</span>{" "}
-                      <span>{pr.title}</span>
-                      <p className="text-sm text-gray-500">
-                        by {pr.user.login} • {new Date(pr.created_at).toLocaleDateString()}
-                      </p>
+                      <a
+                        href={`https://github.com/${repo.full_name}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-white hover:text-emerald-400"
+                      >
+                        {repo.full_name}
+                      </a>
+                      <div className="flex gap-2 mt-1">
+                        {repo.categories?.map(cat => (
+                          <Badge key={cat} variant="outline" className="text-xs">{cat}</Badge>
+                        ))}
+                      </div>
                     </div>
-                    <ReviewButton
-                      owner={selectedRepo.full_name.split("/")[0]}
-                      repo={selectedRepo.name}
-                      prNumber={pr.number}
-                    />
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm text-zinc-500">Enabled</label>
+                      <button
+                        onClick={() => toggleRepo(repo.id, "enabled", !repo.enabled)}
+                        className={`w-10 h-6 rounded-full transition-colors ${repo.enabled ? "bg-emerald-500" : "bg-zinc-700"}`}
+                      >
+                        <div className={`w-4 h-4 rounded-full bg-white transition-transform mx-1 ${repo.enabled ? "translate-x-4" : ""}`} />
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm text-zinc-500">Auto</label>
+                      <button
+                        onClick={() => toggleRepo(repo.id, "auto_review", !repo.auto_review)}
+                        className={`w-10 h-6 rounded-full transition-colors ${repo.auto_review ? "bg-emerald-500" : "bg-zinc-700"}`}
+                      >
+                        <div className={`w-4 h-4 rounded-full bg-white transition-transform mx-1 ${repo.auto_review ? "translate-x-4" : ""}`} />
+                      </button>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setEditingId(editingId === repo.id ? null : repo.id)}>
+                      {editingId === repo.id ? "Close" : "Configure"}
+                    </Button>
+                    <Button variant="outline" size="sm" className="text-red-400 hover:text-red-300" onClick={() => deleteRepo(repo.id)}>
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+
+                {editingId === repo.id && (
+                  <div className="mt-4 pt-4 border-t border-zinc-800 space-y-4">
+                    <div>
+                      <label className="text-sm text-zinc-400 block mb-1">Ignore Paths (comma-separated)</label>
+                      <input
+                        defaultValue={repo.ignore_paths?.join(", ")}
+                        placeholder="node_modules, dist, .next"
+                        className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm"
+                        onBlur={async (e) => {
+                          const paths = e.target.value.split(",").map(p => p.trim()).filter(Boolean);
+                          await fetch(`/api/repos/config/${repo.id}`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ ignore_paths: paths }),
+                          });
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-zinc-400 block mb-1">Custom Instructions</label>
+                      <textarea
+                        defaultValue={repo.custom_instructions}
+                        placeholder="Focus on TypeScript best practices..."
+                        rows={3}
+                        className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm"
+                        onBlur={async (e) => {
+                          await fetch(`/api/repos/config/${repo.id}`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ custom_instructions: e.target.value }),
+                          });
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
     </div>
-  );
-}
-
-function ReviewButton({
-  owner,
-  repo,
-  prNumber,
-}: {
-  owner: string;
-  repo: string;
-  prNumber: number;
-}) {
-  const [reviewing, setReviewing] = useState(false);
-  const [done, setDone] = useState(false);
-
-  const handleReview = async () => {
-    setReviewing(true);
-    try {
-      const res = await fetch("/api/review", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner, repo, pr_number: prNumber }),
-      });
-      if (res.ok) {
-        setDone(true);
-      }
-    } catch (err) {
-      console.error("Review failed:", err);
-    } finally {
-      setReviewing(false);
-    }
-  };
-
-  if (done) {
-    return <Badge className="bg-green-500">Reviewed</Badge>;
-  }
-
-  return (
-    <Button size="sm" onClick={handleReview} disabled={reviewing}>
-      {reviewing ? "Reviewing..." : "Review"}
-    </Button>
   );
 }

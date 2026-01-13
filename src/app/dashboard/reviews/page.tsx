@@ -1,229 +1,140 @@
 "use client";
 
-import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
-interface ReviewResult {
-  summary: {
-    overview: string;
-    changes_description: string;
-    risk_assessment: string;
-    recommendations: string[];
-  };
-  line_comments: Array<{
-    path: string;
-    line: number;
-    body: string;
-    severity: string;
-    category: string;
-  }>;
-  approval_recommendation: string;
+interface Review {
+  id: string;
+  repo_full_name: string;
+  pr_number: number;
+  status: string;
+  result: any;
+  head_sha: string;
+  is_incremental: boolean;
+  created_at: string;
 }
 
 export default function ReviewsPage() {
-  const [owner, setOwner] = useState("Foodshareclub");
-  const [repo, setRepo] = useState("");
-  const [prNumber, setPrNumber] = useState("");
-  const [reviewing, setReviewing] = useState(false);
-  const [result, setResult] = useState<ReviewResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [postToGithub, setPostToGithub] = useState(false);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<"all" | "completed" | "failed">("all");
+  const [search, setSearch] = useState("");
 
-  const handleReview = async () => {
-    if (!owner || !repo || !prNumber) {
-      setError("Please fill in all fields");
-      return;
-    }
+  useEffect(() => {
+    fetch("/api/reviews?limit=50")
+      .then(r => r.json())
+      .then(data => setReviews(data.reviews || []))
+      .finally(() => setLoading(false));
+  }, []);
 
-    setReviewing(true);
-    setError(null);
-    setResult(null);
+  const filteredReviews = reviews.filter(r => {
+    if (filter !== "all" && r.status !== filter) return false;
+    if (search && !r.repo_full_name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
 
-    try {
-      const res = await fetch("/api/review", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          owner,
-          repo,
-          pr_number: parseInt(prNumber),
-          post: postToGithub,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setResult(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Review failed");
-    } finally {
-      setReviewing(false);
-    }
+  const getSeverityIndicator = (result: any) => {
+    if (!result?.line_comments) return { color: "bg-zinc-500", count: 0 };
+    const critical = result.line_comments.filter((c: any) => c.severity === "critical").length;
+    const high = result.line_comments.filter((c: any) => c.severity === "high").length;
+    const total = result.line_comments.length;
+    if (critical > 0) return { color: "bg-red-500", count: total, label: `${critical} critical` };
+    if (high > 0) return { color: "bg-orange-500", count: total, label: `${high} high` };
+    if (total > 0) return { color: "bg-yellow-500", count: total, label: `${total} issues` };
+    return { color: "bg-emerald-500", count: 0, label: "Clean" };
   };
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity.toLowerCase()) {
-      case "high":
-        return "bg-red-500";
-      case "medium":
-        return "bg-yellow-500";
-      case "low":
-        return "bg-blue-500";
-      default:
-        return "bg-gray-500";
-    }
-  };
+  if (loading) {
+    return <div className="flex items-center justify-center h-64 text-zinc-500">Loading...</div>;
+  }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold">Manual Review</h2>
-        <p className="text-gray-500">Trigger an AI code review for any PR</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Review History</h1>
+          <p className="text-zinc-500">{reviews.length} total reviews</p>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Review a Pull Request</CardTitle>
-          <CardDescription>
-            Enter the repository details and PR number
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            <div>
-              <label className="text-sm font-medium">Owner/Org</label>
-              <Input
-                placeholder="owner"
-                value={owner}
-                onChange={(e) => setOwner(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Repository</label>
-              <Input
-                placeholder="repo"
-                value={repo}
-                onChange={(e) => setRepo(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">PR Number</label>
-              <Input
-                placeholder="123"
-                type="number"
-                value={prNumber}
-                onChange={(e) => setPrNumber(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="postToGithub"
-              checked={postToGithub}
-              onChange={(e) => setPostToGithub(e.target.checked)}
-              className="rounded"
-            />
-            <label htmlFor="postToGithub" className="text-sm">
-              Post review comments to GitHub
-            </label>
-          </div>
-          <Button onClick={handleReview} disabled={reviewing}>
-            {reviewing ? "Reviewing..." : "Start Review"}
-          </Button>
-        </CardContent>
-      </Card>
+      {/* Filters */}
+      <div className="flex gap-4 items-center">
+        <input
+          type="text"
+          placeholder="Search repos..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm w-64"
+        />
+        <div className="flex gap-1">
+          {(["all", "completed", "failed"] as const).map(f => (
+            <Button
+              key={f}
+              variant={filter === f ? "default" : "outline"}
+              size="sm"
+              onClick={() => setFilter(f)}
+              className={filter === f ? "bg-emerald-600" : ""}
+            >
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+            </Button>
+          ))}
+        </div>
+      </div>
 
-      {error && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="pt-6">
-            <p className="text-red-600">{error}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {result && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Review Result</CardTitle>
-              <Badge
-                variant={
-                  result.approval_recommendation === "approve"
-                    ? "default"
-                    : "destructive"
-                }
-              >
-                {result.approval_recommendation}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div>
-              <h4 className="font-medium mb-2">Overview</h4>
-              <p className="text-gray-600">{result.summary?.overview}</p>
-            </div>
-
-            <div>
-              <h4 className="font-medium mb-2">Changes Description</h4>
-              <p className="text-gray-600">{result.summary?.changes_description}</p>
-            </div>
-
-            <div>
-              <h4 className="font-medium mb-2">Risk Assessment</h4>
-              <p className="text-gray-600">{result.summary?.risk_assessment}</p>
-            </div>
-
-            {result.summary?.recommendations?.length > 0 && (
-              <div>
-                <h4 className="font-medium mb-2">Recommendations</h4>
-                <ul className="list-disc pl-4 text-gray-600 space-y-1">
-                  {result.summary.recommendations.map((r, i) => (
-                    <li key={i}>{r}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {result.line_comments?.length > 0 && (
-              <div>
-                <h4 className="font-medium mb-2">
-                  Issues Found ({result.line_comments.length})
-                </h4>
-                <div className="space-y-3">
-                  {result.line_comments.map((comment, i) => (
-                    <div
-                      key={i}
-                      className="p-3 bg-gray-50 rounded-md border-l-4"
-                      style={{
-                        borderLeftColor:
-                          comment.severity === "high"
-                            ? "#ef4444"
-                            : comment.severity === "medium"
-                            ? "#eab308"
-                            : "#3b82f6",
-                      }}
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <Badge className={getSeverityColor(comment.severity)}>
-                          {comment.severity}
-                        </Badge>
-                        <Badge variant="outline">{comment.category}</Badge>
-                        <span className="font-mono text-xs text-gray-500">
-                          {comment.path}:{comment.line}
-                        </span>
+      {/* Reviews List */}
+      <div className="space-y-3">
+        {filteredReviews.length === 0 ? (
+          <Card className="bg-zinc-900 border-zinc-800">
+            <CardContent className="py-12 text-center">
+              <p className="text-zinc-500">No reviews found</p>
+            </CardContent>
+          </Card>
+        ) : (
+          filteredReviews.map(review => {
+            const severity = getSeverityIndicator(review.result);
+            return (
+              <Link key={review.id} href={`/dashboard/reviews/${review.id}`}>
+                <Card className="bg-zinc-900 border-zinc-800 hover:border-zinc-700 transition-colors cursor-pointer">
+                  <CardContent className="py-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className={`w-3 h-3 rounded-full ${severity.color}`} />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-white">{review.repo_full_name}</span>
+                            <span className="text-zinc-500">#{review.pr_number}</span>
+                            {review.is_incremental && (
+                              <Badge variant="outline" className="text-xs">Incremental</Badge>
+                            )}
+                          </div>
+                          <div className="text-sm text-zinc-500">
+                            {new Date(review.created_at).toLocaleString()} • {review.head_sha?.slice(0, 7)}
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-gray-700">{comment.body}</p>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <div className="text-sm text-zinc-400">{severity.label}</div>
+                          <Badge
+                            variant="outline"
+                            className={review.status === "completed" ? "border-emerald-500 text-emerald-400" : "border-red-500 text-red-400"}
+                          >
+                            {review.status}
+                          </Badge>
+                        </div>
+                        <span className="text-zinc-600">→</span>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }

@@ -226,15 +226,22 @@ export async function reviewAndPost(
     comment: "COMMENT" as const,
   };
 
-  const comments = review.line_comments.map((c) => {
-    let commentBody = `**[${c.severity.toString().toUpperCase()}]** ${c.body}`;
-    if (c.suggestion) {
-      commentBody += `\n\n\`\`\`suggestion\n${c.suggestion}\n\`\`\``;
-    }
-    return { path: c.path, line: c.line, body: commentBody };
-  });
+  const comments = review.line_comments
+    .filter((c) => c.path && c.line > 0)
+    .map((c) => {
+      let commentBody = `**[${c.severity.toString().toUpperCase()}]** ${c.body}`;
+      if (c.suggestion) {
+        commentBody += `\n\n\`\`\`suggestion\n${c.suggestion}\n\`\`\``;
+      }
+      return { path: c.path, line: c.line, body: commentBody };
+    });
 
-  await createReview(owner, repo, prNumber, body, eventMap[review.approval_recommendation], comments);
+  try {
+    await createReview(owner, repo, prNumber, body, eventMap[review.approval_recommendation], comments);
+  } catch {
+    // If posting with line comments fails, post without them
+    await createReview(owner, repo, prNumber, body, "COMMENT", []);
+  }
 
   return { review, posted: true, headSha, isIncremental };
 }

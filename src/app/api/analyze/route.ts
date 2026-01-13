@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { analyzePR, PRContext } from "@/lib/analysis";
+import { analyzePR, PRContext, getDepthPrompt } from "@/lib/analysis";
 
 export const runtime = "edge";
 
@@ -19,10 +19,12 @@ export async function POST(request: NextRequest) {
     };
 
     const decision = analyzePR(ctx);
+    const prompt_additions = getDepthPrompt(decision.depth, decision.focus_areas);
 
     return NextResponse.json({
       ...decision,
       total_changes: ctx.additions + ctx.deletions,
+      prompt_preview: prompt_additions.slice(0, 200) + (prompt_additions.length > 200 ? "..." : ""),
     });
   } catch (error) {
     return NextResponse.json(

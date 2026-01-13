@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { owner, repo, pr_number, post = false } = body;
+    const { owner, repo, pr_number, post = false, depth, focus_areas } = body;
 
     if (!owner || !repo || !pr_number) {
       return NextResponse.json(
@@ -15,24 +15,23 @@ export async function POST(request: NextRequest) {
     }
 
     const fullName = `${owner}/${repo}`;
+    const options = depth || focus_areas ? { depth, focus_areas } : undefined;
 
     if (post) {
-      const result = await reviewAndPost(owner, repo, pr_number);
-      // Save to history
+      const result = await reviewAndPost(owner, repo, pr_number, undefined, options);
       const supabase = await createClient();
       await supabase.from("review_history").insert({
         repo_full_name: fullName,
         pr_number,
         status: "completed",
-        result: result.review,
+        result: { ...result.review, _analysis: result.analysis },
         head_sha: result.headSha,
         is_incremental: result.isIncremental,
       });
       return NextResponse.json(result);
     }
 
-    const review = await reviewPullRequest(owner, repo, pr_number);
-    // Save to history
+    const review = await reviewPullRequest(owner, repo, pr_number, undefined, undefined, undefined, options);
     const supabase = await createClient();
     await supabase.from("review_history").insert({
       repo_full_name: fullName,

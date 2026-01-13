@@ -1,5 +1,5 @@
 import { chat } from "./llm";
-import { getPullRequest, getPullRequestDiff, createReview, getCompareCommits } from "./github";
+import { getPullRequest, getPullRequestDiff, createReview, getCompareCommits, getPullRequestFiles } from "./github";
 import { parseDiff, summarizeFiles, truncateDiff, filterIgnoredPaths } from "./review/analyzer";
 import { SYSTEM_PROMPT, buildReviewPrompt, INCREMENTAL_SYSTEM_PROMPT, buildIncrementalPrompt } from "./review/prompts";
 import {
@@ -10,8 +10,10 @@ import {
   FileWalkthrough,
 } from "./review/models";
 import { createClient } from "./supabase/server";
+import { analyzePR, getDepthPrompt, PRContext, ReviewDecision } from "./analysis";
 
 export type { CodeReviewResult as ReviewResult } from "./review/models";
+export type { ReviewDecision } from "./analysis";
 
 interface RepoConfig {
   categories?: string[];
@@ -88,13 +90,8 @@ export async function reviewPullRequest(
   if (config?.custom_instructions) {
     systemPrompt += `\n\n## Custom Instructions\n${config.custom_instructions}`;
   }
-  if (options?.depth === "quick") {
-    systemPrompt += "\n\nBe concise. Focus only on critical issues.";
-  } else if (options?.depth === "deep") {
-    systemPrompt += "\n\nBe thorough. Check edge cases, error handling, and subtle bugs.";
-  }
-  if (options?.focus_areas?.length) {
-    systemPrompt += `\n\nPrioritize: ${options.focus_areas.join(", ")}`;
+  if (options?.depth || options?.focus_areas?.length) {
+    systemPrompt += "\n\n" + getDepthPrompt(options.depth || "standard", options.focus_areas || []);
   }
 
   const prompt = isIncremental
@@ -214,18 +211,41 @@ export async function reviewAndPost(
   prNumber: number,
   categories?: ReviewCategory[],
   options?: { depth?: "quick" | "standard" | "deep"; focus_areas?: string[] }
-): Promise<{ review: CodeReviewResult; posted: boolean; headSha: string; isIncremental: boolean }> {
+): Promise<{ review: CodeReviewResult; posted: boolean; headSha: string; isIncremental: boolean; analysis?: ReviewDecision }> {
   const fullName = `${owner}/${repo}`;
   const [lastReviewedSha, config] = await Promise.all([
     getLastReviewedSha(fullName, prNumber),
     getRepoConfig(fullName),
   ]);
 
+  // Auto-analyze if no options provided
+  let analysis: ReviewDecision | undefined;
+  let reviewOptions = options;
+  if (!options?.depth) {
+    try {
+      const [prData, prFiles] = await Promise.all([
+        getPullRequest(owner, repo, prNumber),
+        getPullRequestFiles(owner, repo, prNumber),
+      ]);
+      const ctx: PRContext = {
+        files_changed: prData.changed_files || 0,
+        additions: prData.additions || 0,
+        deletions: prData.deletions || 0,
+        title: prData.title || "",
+        labels: (prData.labels || []).map((l: any) => l.name || l),
+        base_branch: prData.base?.ref || "main",
+        files: prFiles.map((f: any) => f.filename),
+      };
+      analysis = analyzePR(ctx);
+      reviewOptions = { depth: analysis.depth, focus_areas: analysis.focus_areas };
+    } catch { /* use defaults */ }
+  }
+
   const reviewCategories = categories || 
     (config.categories?.map((c) => c as ReviewCategory)) ||
     [ReviewCategory.SECURITY, ReviewCategory.BUG, ReviewCategory.PERFORMANCE];
 
-  const result = await reviewPullRequest(owner, repo, prNumber, reviewCategories, lastReviewedSha, config, options);
+  const result = await reviewPullRequest(owner, repo, prNumber, reviewCategories, lastReviewedSha, config, reviewOptions);
   const { headSha, isIncremental, ...review } = result;
 
   const body = formatReviewBody(review, isIncremental);
@@ -253,5 +273,5 @@ export async function reviewAndPost(
     await createReview(owner, repo, prNumber, body, "COMMENT", []);
   }
 
-  return { review, posted: true, headSha, isIncremental };
+  return { review, posted: true, headSha, isIncremental, analysis };
 }

@@ -41,7 +41,9 @@ export default function ReviewDetailPage() {
   const router = useRouter();
   const [review, setReview] = useState<Review | null>(null);
   const [loading, setLoading] = useState(true);
+  const [rerunning, setRerunning] = useState(false);
   const [activeTab, setActiveTab] = useState<"summary" | "issues" | "files">("summary");
+  const [copiedId, setCopiedId] = useState<number | null>(null);
 
   useEffect(() => {
     fetch(`/api/reviews/${params.id}`)
@@ -50,8 +52,30 @@ export default function ReviewDetailPage() {
       .finally(() => setLoading(false));
   }, [params.id]);
 
+  const rerunReview = async () => {
+    if (!review) return;
+    setRerunning(true);
+    const [owner, repo] = review.repo_full_name.split("/");
+    try {
+      await fetch("/api/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner, repo, pr_number: review.pr_number, post: true }),
+      });
+      router.push("/dashboard/reviews");
+    } finally {
+      setRerunning(false);
+    }
+  };
+
+  const copySuggestion = (index: number, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(index);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-zinc-500">Loading...</div>;
+    return <div className="flex items-center justify-center h-64 text-zinc-500">Loading review...</div>;
   }
 
   if (!review) {
@@ -84,13 +108,19 @@ export default function ReviewDetailPage() {
   const highCount = result?.line_comments?.filter(c => c.severity === "high").length || 0;
   const mediumCount = result?.line_comments?.filter(c => c.severity === "medium").length || 0;
 
+  const riskColor = result?.summary?.risk_assessment?.toLowerCase().includes("high") 
+    ? "text-red-400 border-red-400" 
+    : result?.summary?.risk_assessment?.toLowerCase().includes("medium")
+    ? "text-yellow-400 border-yellow-400"
+    : "text-emerald-400 border-emerald-400";
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2 text-sm text-zinc-500 mb-2">
-            <Link href="/dashboard/reviews" className="hover:text-white">Reviews</Link>
+            <Link href="/dashboard/reviews" className="hover:text-white">← Reviews</Link>
             <span>/</span>
             <span>{review.repo_full_name}</span>
           </div>
@@ -99,19 +129,18 @@ export default function ReviewDetailPage() {
             <Badge className={review.status === "completed" ? "bg-emerald-500" : "bg-red-500"}>
               {review.status}
             </Badge>
-            {review.is_incremental && <Badge variant="outline">Incremental</Badge>}
+            {review.is_incremental && <Badge variant="outline" className="text-blue-400 border-blue-400">Incremental</Badge>}
           </h1>
           <p className="text-zinc-500 mt-1">
-            Reviewed {new Date(review.created_at).toLocaleString()} • {review.head_sha?.slice(0, 7)}
+            {new Date(review.created_at).toLocaleString()} • Commit {review.head_sha?.slice(0, 7)}
           </p>
         </div>
         <div className="flex gap-2">
-          <a
-            href={`https://github.com/${review.repo_full_name}/pull/${review.pr_number}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Button variant="outline">View on GitHub →</Button>
+          <Button variant="outline" onClick={rerunReview} disabled={rerunning}>
+            {rerunning ? "Re-reviewing..." : "🔄 Re-review"}
+          </Button>
+          <a href={`https://github.com/${review.repo_full_name}/pull/${review.pr_number}`} target="_blank" rel="noopener noreferrer">
+            <Button className="bg-zinc-800 hover:bg-zinc-700">View on GitHub →</Button>
           </a>
         </div>
       </div>
@@ -138,7 +167,9 @@ export default function ReviewDetailPage() {
         </Card>
         <Card className="bg-zinc-900 border-zinc-800">
           <CardContent className="pt-6 text-center">
-            <div className="text-3xl font-bold text-white capitalize">{result?.approval_recommendation || "N/A"}</div>
+            <div className="text-3xl font-bold text-white capitalize">
+              {result?.approval_recommendation?.replace("_", " ") || "N/A"}
+            </div>
             <div className="text-sm text-zinc-500">Recommendation</div>
           </CardContent>
         </Card>
@@ -151,14 +182,12 @@ export default function ReviewDetailPage() {
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === tab
-                ? "text-emerald-400 border-b-2 border-emerald-400"
-                : "text-zinc-500 hover:text-white"
+              activeTab === tab ? "text-emerald-400 border-b-2 border-emerald-400" : "text-zinc-500 hover:text-white"
             }`}
           >
-            {tab === "summary" && "Summary"}
-            {tab === "issues" && `Issues (${result?.line_comments?.length || 0})`}
-            {tab === "files" && `Files (${result?.walkthrough?.length || 0})`}
+            {tab === "summary" && "📋 Summary"}
+            {tab === "issues" && `🔍 Issues (${result?.line_comments?.length || 0})`}
+            {tab === "files" && `📁 Files (${result?.walkthrough?.length || 0})`}
           </button>
         ))}
       </div>
@@ -171,22 +200,22 @@ export default function ReviewDetailPage() {
               <CardTitle className="text-white">Overview</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-zinc-300">{result?.summary?.overview}</p>
-              <div>
-                <h4 className="text-sm font-medium text-zinc-400 mb-1">Changes</h4>
-                <p className="text-zinc-300">{result?.summary?.changes_description}</p>
-              </div>
-              <div>
-                <h4 className="text-sm font-medium text-zinc-400 mb-1">Risk Assessment</h4>
-                <Badge variant="outline" className="text-yellow-400 border-yellow-400">
-                  {result?.summary?.risk_assessment}
-                </Badge>
+              <p className="text-zinc-300 text-lg">{result?.summary?.overview}</p>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <h4 className="text-sm font-medium text-zinc-400 mb-1">Changes</h4>
+                  <p className="text-zinc-300">{result?.summary?.changes_description}</p>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-zinc-400 mb-1">Risk Assessment</h4>
+                  <Badge variant="outline" className={riskColor}>{result?.summary?.risk_assessment}</Badge>
+                </div>
               </div>
             </CardContent>
           </Card>
 
           {result?.summary?.praise?.length > 0 && (
-            <Card className="bg-zinc-900 border-zinc-800 border-l-4 border-l-emerald-500">
+            <Card className="bg-emerald-950/30 border-emerald-800">
               <CardHeader>
                 <CardTitle className="text-emerald-400">✨ What&apos;s Good</CardTitle>
               </CardHeader>
@@ -194,7 +223,7 @@ export default function ReviewDetailPage() {
                 <ul className="space-y-2">
                   {result.summary.praise.map((p, i) => (
                     <li key={i} className="text-zinc-300 flex items-start gap-2">
-                      <span className="text-emerald-400">•</span> {p}
+                      <span className="text-emerald-400">✓</span> {p}
                     </li>
                   ))}
                 </ul>
@@ -205,13 +234,14 @@ export default function ReviewDetailPage() {
           {result?.summary?.recommendations?.length > 0 && (
             <Card className="bg-zinc-900 border-zinc-800">
               <CardHeader>
-                <CardTitle className="text-white">📋 Recommendations</CardTitle>
+                <CardTitle className="text-white">📋 Action Items</CardTitle>
               </CardHeader>
               <CardContent>
-                <ul className="space-y-2">
+                <ul className="space-y-3">
                   {result.summary.recommendations.map((r, i) => (
-                    <li key={i} className="text-zinc-300 flex items-start gap-2">
-                      <span className="text-zinc-500">{i + 1}.</span> {r}
+                    <li key={i} className="flex items-start gap-3 p-3 bg-zinc-800/50 rounded-lg">
+                      <span className="text-emerald-400 font-bold">{i + 1}</span>
+                      <span className="text-zinc-300">{r}</span>
                     </li>
                   ))}
                 </ul>
@@ -226,12 +256,13 @@ export default function ReviewDetailPage() {
           {!result?.line_comments?.length ? (
             <Card className="bg-zinc-900 border-zinc-800">
               <CardContent className="py-12 text-center">
-                <p className="text-zinc-500">No issues found 🎉</p>
+                <div className="text-4xl mb-2">🎉</div>
+                <p className="text-zinc-400">No issues found - great job!</p>
               </CardContent>
             </Card>
           ) : (
             result.line_comments.map((comment, i) => (
-              <Card key={i} className="bg-zinc-900 border-zinc-800">
+              <Card key={i} className="bg-zinc-900 border-zinc-800 hover:border-zinc-700 transition-colors">
                 <CardContent className="pt-6">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-2">
@@ -241,15 +272,28 @@ export default function ReviewDetailPage() {
                       <span className="text-lg">{categoryIcons[comment.category] || "📝"}</span>
                       <span className="text-sm text-zinc-500">{comment.category}</span>
                     </div>
-                    <code className="text-xs bg-zinc-800 px-2 py-1 rounded text-zinc-400">
-                      {comment.path}:{comment.line}
-                    </code>
+                    <a
+                      href={`https://github.com/${review.repo_full_name}/pull/${review.pr_number}/files#diff-${comment.path.replace(/[/.]/g, "")}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs bg-zinc-800 px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-zinc-700"
+                    >
+                      {comment.path}:{comment.line} →
+                    </a>
                   </div>
                   <p className="text-zinc-300 mb-3">{comment.body}</p>
                   {comment.suggestion && (
                     <div className="mt-3 p-3 bg-zinc-800 rounded-lg border-l-4 border-emerald-500">
-                      <div className="text-xs text-emerald-400 mb-1">💡 Suggestion</div>
-                      <pre className="text-sm text-zinc-300 whitespace-pre-wrap font-mono">{comment.suggestion}</pre>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-emerald-400">💡 Suggested Fix</span>
+                        <button
+                          onClick={() => copySuggestion(i, comment.suggestion!)}
+                          className="text-xs text-zinc-500 hover:text-white px-2 py-1 rounded bg-zinc-700"
+                        >
+                          {copiedId === i ? "Copied!" : "Copy"}
+                        </button>
+                      </div>
+                      <pre className="text-sm text-zinc-300 whitespace-pre-wrap font-mono overflow-x-auto">{comment.suggestion}</pre>
                     </div>
                   )}
                 </CardContent>
@@ -270,16 +314,27 @@ export default function ReviewDetailPage() {
           ) : (
             result.walkthrough.map((file, i) => (
               <Card key={i} className="bg-zinc-900 border-zinc-800">
-                <CardHeader>
-                  <CardTitle className="text-white font-mono text-sm">{file.path}</CardTitle>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-white font-mono text-sm">{file.path}</CardTitle>
+                    <a
+                      href={`https://github.com/${review.repo_full_name}/pull/${review.pr_number}/files#diff-${file.path.replace(/[/.]/g, "")}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-emerald-400 hover:underline"
+                    >
+                      View on GitHub →
+                    </a>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <p className="text-zinc-400 mb-2">{file.summary}</p>
                   {file.changes?.length > 0 && (
-                    <ul className="space-y-1">
+                    <ul className="space-y-1 mt-2">
                       {file.changes.map((change, j) => (
                         <li key={j} className="text-sm text-zinc-500 flex items-start gap-2">
-                          <span>•</span> {typeof change === "string" ? change : JSON.stringify(change)}
+                          <span className="text-emerald-400">•</span>
+                          {typeof change === "string" ? change : JSON.stringify(change)}
                         </li>
                       ))}
                     </ul>

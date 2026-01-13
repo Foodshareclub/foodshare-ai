@@ -23,12 +23,22 @@ interface RepoConfig {
   auto_review: boolean;
 }
 
+interface PR {
+  number: number;
+  title: string;
+  state: string;
+}
+
 export default function DashboardPage() {
   const [recentReviews, setRecentReviews] = useState<Review[]>([]);
   const [repos, setRepos] = useState<RepoConfig[]>([]);
   const [loading, setLoading] = useState(true);
-  const [quickReview, setQuickReview] = useState({ owner: "", repo: "", pr: "" });
+  const [selectedRepo, setSelectedRepo] = useState("");
+  const [prs, setPrs] = useState<PR[]>([]);
+  const [selectedPr, setSelectedPr] = useState("");
   const [reviewing, setReviewing] = useState(false);
+  const [loadingPrs, setLoadingPrs] = useState(false);
+  const [postToGithub, setPostToGithub] = useState(true);
 
   useEffect(() => {
     Promise.all([
@@ -40,24 +50,29 @@ export default function DashboardPage() {
     }).finally(() => setLoading(false));
   }, []);
 
-  const runQuickReview = async () => {
-    if (!quickReview.owner || !quickReview.repo || !quickReview.pr) return;
+  useEffect(() => {
+    if (!selectedRepo) { setPrs([]); return; }
+    setLoadingPrs(true);
+    const [owner, repo] = selectedRepo.split("/");
+    fetch(`/api/pulls?owner=${owner}&repo=${repo}`)
+      .then(r => r.json())
+      .then(data => setPrs(data.pulls || []))
+      .finally(() => setLoadingPrs(false));
+  }, [selectedRepo]);
+
+  const runReview = async () => {
+    if (!selectedRepo || !selectedPr) return;
     setReviewing(true);
+    const [owner, repo] = selectedRepo.split("/");
     try {
-      const res = await fetch("/api/review", {
+      await fetch("/api/review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          owner: quickReview.owner,
-          repo: quickReview.repo,
-          pr_number: parseInt(quickReview.pr),
-          post: true,
-        }),
+        body: JSON.stringify({ owner, repo, pr_number: parseInt(selectedPr), post: postToGithub }),
       });
-      if (res.ok) {
-        const reviews = await fetch("/api/reviews?limit=5").then(r => r.json());
-        setRecentReviews(reviews.reviews || []);
-      }
+      const reviews = await fetch("/api/reviews?limit=5").then(r => r.json());
+      setRecentReviews(reviews.reviews || []);
+      setSelectedPr("");
     } finally {
       setReviewing(false);
     }
@@ -72,50 +87,108 @@ export default function DashboardPage() {
     return "bg-emerald-500";
   };
 
+  const getIssueCount = (result: any) => result?.line_comments?.length || 0;
+
   if (loading) {
     return <div className="flex items-center justify-center h-64 text-zinc-500">Loading...</div>;
   }
+
+  const totalIssues = recentReviews.reduce((acc, r) => acc + getIssueCount(r.result), 0);
+  const criticalIssues = recentReviews.reduce((acc, r) => 
+    acc + (r.result?.line_comments?.filter((c: any) => c.severity === "critical" || c.severity === "high").length || 0), 0);
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-        <p className="text-zinc-500">AI-powered code review overview</p>
+        <p className="text-zinc-500">AI-powered code review for your pull requests</p>
       </div>
 
       {/* Quick Review */}
-      <Card className="bg-zinc-900 border-zinc-800">
+      <Card className="bg-gradient-to-r from-emerald-900/20 to-zinc-900 border-emerald-800/50">
         <CardHeader>
           <CardTitle className="text-white flex items-center gap-2">
             <span>⚡</span> Quick Review
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex gap-2">
-            <input
-              placeholder="owner"
-              value={quickReview.owner}
-              onChange={e => setQuickReview(p => ({ ...p, owner: e.target.value }))}
-              className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm"
-            />
-            <input
-              placeholder="repo"
-              value={quickReview.repo}
-              onChange={e => setQuickReview(p => ({ ...p, repo: e.target.value }))}
-              className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm"
-            />
-            <input
-              placeholder="PR #"
-              value={quickReview.pr}
-              onChange={e => setQuickReview(p => ({ ...p, pr: e.target.value }))}
-              className="w-24 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm"
-            />
-            <Button onClick={runQuickReview} disabled={reviewing} className="bg-emerald-600 hover:bg-emerald-700">
-              {reviewing ? "Reviewing..." : "Review"}
+        <CardContent className="space-y-4">
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm text-zinc-400 block mb-1">Repository</label>
+              <select
+                value={selectedRepo}
+                onChange={e => { setSelectedRepo(e.target.value); setSelectedPr(""); }}
+                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+              >
+                <option value="">Select repository...</option>
+                {repos.filter(r => r.enabled).map(repo => (
+                  <option key={repo.id} value={repo.full_name}>{repo.full_name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm text-zinc-400 block mb-1">Pull Request</label>
+              <select
+                value={selectedPr}
+                onChange={e => setSelectedPr(e.target.value)}
+                disabled={!selectedRepo || loadingPrs}
+                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white disabled:opacity-50"
+              >
+                <option value="">{loadingPrs ? "Loading PRs..." : "Select PR..."}</option>
+                {prs.map(pr => (
+                  <option key={pr.number} value={pr.number}>#{pr.number} - {pr.title.slice(0, 50)}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={postToGithub}
+                onChange={e => setPostToGithub(e.target.checked)}
+                className="rounded bg-zinc-800 border-zinc-700"
+              />
+              Post review to GitHub
+            </label>
+            <Button 
+              onClick={runReview} 
+              disabled={reviewing || !selectedRepo || !selectedPr}
+              className="bg-emerald-600 hover:bg-emerald-700 px-8"
+            >
+              {reviewing ? "Reviewing..." : "🔍 Start Review"}
             </Button>
           </div>
         </CardContent>
       </Card>
+
+      {/* Stats */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className="bg-zinc-900 border-zinc-800">
+          <CardContent className="pt-6">
+            <div className="text-3xl font-bold text-white">{recentReviews.length}</div>
+            <div className="text-sm text-zinc-500">Recent Reviews</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-zinc-900 border-zinc-800">
+          <CardContent className="pt-6">
+            <div className="text-3xl font-bold text-yellow-400">{totalIssues}</div>
+            <div className="text-sm text-zinc-500">Issues Found</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-zinc-900 border-zinc-800">
+          <CardContent className="pt-6">
+            <div className="text-3xl font-bold text-red-400">{criticalIssues}</div>
+            <div className="text-sm text-zinc-500">Critical/High</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-zinc-900 border-zinc-800">
+          <CardContent className="pt-6">
+            <div className="text-3xl font-bold text-emerald-400">{repos.filter(r => r.enabled).length}</div>
+            <div className="text-sm text-zinc-500">Active Repos</div>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="grid gap-6 md:grid-cols-2">
         {/* Recent Reviews */}
@@ -126,7 +199,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {recentReviews.length === 0 ? (
-              <p className="text-zinc-500 text-sm">No reviews yet</p>
+              <p className="text-zinc-500 text-sm py-4 text-center">No reviews yet. Run your first review above!</p>
             ) : (
               recentReviews.map((review) => (
                 <Link
@@ -138,7 +211,7 @@ export default function DashboardPage() {
                     <div className={`w-2 h-2 rounded-full ${getSeverityColor(review.result)}`} />
                     <div>
                       <div className="text-sm font-medium text-white">{review.repo_full_name}</div>
-                      <div className="text-xs text-zinc-500">PR #{review.pr_number}</div>
+                      <div className="text-xs text-zinc-500">PR #{review.pr_number} • {getIssueCount(review.result)} issues</div>
                     </div>
                   </div>
                   <div className="text-right">
@@ -178,43 +251,11 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     {repo.auto_review && <Badge className="bg-emerald-500/20 text-emerald-400 text-xs">Auto</Badge>}
-                    <Badge variant="outline" className={repo.enabled ? "border-emerald-500 text-emerald-400" : "border-zinc-600 text-zinc-500"}>
-                      {repo.enabled ? "Active" : "Disabled"}
-                    </Badge>
+                    <div className={`w-2 h-2 rounded-full ${repo.enabled ? "bg-emerald-500" : "bg-zinc-600"}`} />
                   </div>
                 </div>
               ))
             )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card className="bg-zinc-900 border-zinc-800">
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-white">{recentReviews.filter(r => r.status === "completed").length}</div>
-            <div className="text-sm text-zinc-500">Completed Today</div>
-          </CardContent>
-        </Card>
-        <Card className="bg-zinc-900 border-zinc-800">
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-red-400">
-              {recentReviews.reduce((acc, r) => acc + (r.result?.line_comments?.filter((c: any) => c.severity === "critical" || c.severity === "high").length || 0), 0)}
-            </div>
-            <div className="text-sm text-zinc-500">Critical Issues</div>
-          </CardContent>
-        </Card>
-        <Card className="bg-zinc-900 border-zinc-800">
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-emerald-400">{repos.filter(r => r.enabled).length}</div>
-            <div className="text-sm text-zinc-500">Active Repos</div>
-          </CardContent>
-        </Card>
-        <Card className="bg-zinc-900 border-zinc-800">
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-white">Groq</div>
-            <div className="text-sm text-zinc-500">LLM Provider</div>
           </CardContent>
         </Card>
       </div>

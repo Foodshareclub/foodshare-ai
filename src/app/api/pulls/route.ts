@@ -9,19 +9,21 @@ export async function GET(request: NextRequest) {
     const state = (searchParams.get("state") || "open") as "open" | "closed" | "all";
 
     if (!owner || !repo) {
-      return NextResponse.json(
-        { error: "Missing required params: owner, repo" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing required params: owner, repo" }, { status: 400 });
     }
 
-    const pulls = await listPullRequests(owner, repo, state);
-    return NextResponse.json(pulls);
+    const data = await listPullRequests(owner, repo, state);
+    const pulls = data.map((pr: any) => ({
+      number: pr.number,
+      title: pr.title,
+      state: pr.state,
+      user: pr.user?.login,
+      created_at: pr.created_at,
+    }));
+    
+    return NextResponse.json({ pulls });
   } catch (error) {
     console.error("Pulls error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to fetch PRs" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to fetch PRs" }, { status: 500 });
   }
 }

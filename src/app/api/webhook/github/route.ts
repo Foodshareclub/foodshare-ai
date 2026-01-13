@@ -19,15 +19,18 @@ export async function POST(request: NextRequest) {
   try {
     const payload = await request.text();
     const signature = request.headers.get("x-hub-signature-256");
+    const event = request.headers.get("x-github-event");
+
+    // Allow ping without signature for testing
+    if (event === "ping") {
+      return NextResponse.json({ message: "Pong", status: "ok" });
+    }
 
     if (!verifySignature(payload, signature)) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
-    const event = request.headers.get("x-github-event");
     const body = JSON.parse(payload);
-
-    if (event === "ping") return NextResponse.json({ message: "Pong" });
     if (event !== "pull_request") return NextResponse.json({ message: "Ignored event" });
     if (!["opened", "synchronize"].includes(body.action)) {
       return NextResponse.json({ message: `Ignored action: ${body.action}` });

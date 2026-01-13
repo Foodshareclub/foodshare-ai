@@ -8,6 +8,7 @@ const navItems = [
   { href: "/dashboard", label: "Overview" },
   { href: "/dashboard/repos", label: "Repos" },
   { href: "/dashboard/reviews", label: "Reviews" },
+  { href: "/dashboard/repo-reviews", label: "Repo Reviews" },
   { href: "/dashboard/settings", label: "Settings" },
 ];
 

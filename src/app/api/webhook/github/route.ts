@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac } from "crypto";
 import { reviewAndPost } from "@/lib/review";
+import { createClient } from "@/lib/supabase/server";
 
 const WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
 
@@ -46,13 +47,23 @@ export async function POST(request: NextRequest) {
 
     const pr = body.pull_request;
     const repo = body.repository;
+    const fullName = repo.full_name;
 
-    console.log(
-      `Processing PR #${pr.number} on ${repo.full_name} (action: ${action})`
-    );
+    // Check repo config
+    const supabase = await createClient();
+    const { data: config } = await supabase
+      .from("repo_configs")
+      .select("enabled, auto_review, categories")
+      .eq("full_name", fullName)
+      .single();
+
+    if (!config?.enabled || !config?.auto_review) {
+      return NextResponse.json({ message: "Auto-review disabled for this repo" });
+    }
+
+    console.log(`Processing PR #${pr.number} on ${fullName} (action: ${action})`);
 
     // Process review in background
-    // Note: In production, use a proper job queue
     reviewAndPost(repo.owner.login, repo.name, pr.number).catch((err) => {
       console.error("Background review failed:", err);
     });
@@ -60,7 +71,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       message: "Review triggered",
       pr_number: pr.number,
-      repo: repo.full_name,
+      repo: fullName,
     });
   } catch (error) {
     console.error("Webhook error:", error);

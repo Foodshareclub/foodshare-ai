@@ -5,104 +5,222 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-export default function SettingsPage() {
-  const [llmProvider, setLlmProvider] = useState("groq");
-  const [ollamaStatus, setOllamaStatus] = useState<"checking" | "online" | "offline">("checking");
-  const [ollamaHost, setOllamaHost] = useState("");
-  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+interface Stats {
+  reviews: number;
+  repos: number;
+}
 
-  const checkOllamaStatus = async () => {
-    setOllamaStatus("checking");
+interface OllamaStatus {
+  status: string;
+  host: string;
+  models: string[];
+}
+
+export default function SettingsPage() {
+  const [stats, setStats] = useState<Stats>({ reviews: 0, repos: 0 });
+  const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [testingWebhook, setTestingWebhook] = useState(false);
+  const [webhookResult, setWebhookResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/stats").then(r => r.json()).then(setStats);
+    setWebhookUrl(typeof window !== "undefined" ? `${window.location.origin}/api/webhook/github` : "");
+    checkOllama();
+  }, []);
+
+  const checkOllama = async () => {
+    setChecking(true);
     try {
       const res = await fetch("/api/ollama/status");
       const data = await res.json();
-      setOllamaStatus(data.status);
-      setOllamaHost(data.host || "");
-      setOllamaModels(data.models || []);
+      setOllamaStatus(data);
     } catch {
-      setOllamaStatus("offline");
+      setOllamaStatus({ status: "offline", host: "", models: [] });
     }
+    setChecking(false);
   };
 
-  useEffect(() => {
-    setLlmProvider(process.env.NEXT_PUBLIC_LLM_PROVIDER || "groq");
-    checkOllamaStatus();
-  }, []);
+  const testWebhook = async () => {
+    setTestingWebhook(true);
+    setWebhookResult(null);
+    try {
+      const res = await fetch("/api/webhook/github", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-github-event": "ping" },
+        body: JSON.stringify({ zen: "Test ping" }),
+      });
+      setWebhookResult(res.ok ? "✅ Webhook endpoint is working" : "❌ Webhook returned error");
+    } catch {
+      setWebhookResult("❌ Failed to reach webhook");
+    }
+    setTestingWebhook(false);
+  };
+
+  const copyWebhookUrl = () => {
+    navigator.clipboard.writeText(webhookUrl);
+  };
+
+  const clearAllReviews = async () => {
+    if (!confirm("Delete ALL review history? This cannot be undone.")) return;
+    if (!confirm("Are you really sure? This will delete all reviews.")) return;
+    // Would need a bulk delete endpoint
+    alert("Bulk delete not implemented yet");
+  };
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold">Settings</h2>
-        <p className="text-gray-500">Configure the code review service</p>
+        <h1 className="text-2xl font-bold text-white">Settings</h1>
+        <p className="text-zinc-500">Configure your AI code review service</p>
       </div>
 
-      <Card>
+      {/* Stats Overview */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="bg-zinc-900 border-zinc-800">
+          <CardContent className="pt-6 text-center">
+            <div className="text-3xl font-bold text-white">{stats.reviews}</div>
+            <div className="text-sm text-zinc-500">Total Reviews</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-zinc-900 border-zinc-800">
+          <CardContent className="pt-6 text-center">
+            <div className="text-3xl font-bold text-white">{stats.repos}</div>
+            <div className="text-sm text-zinc-500">Connected Repos</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-zinc-900 border-zinc-800">
+          <CardContent className="pt-6 text-center">
+            <div className="text-3xl font-bold text-emerald-400">Groq</div>
+            <div className="text-sm text-zinc-500">LLM Provider</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* LLM Configuration */}
+      <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader>
-          <CardTitle>LLM Provider</CardTitle>
-          <CardDescription>Choose the AI model provider for code reviews</CardDescription>
+          <CardTitle className="text-white">🤖 LLM Configuration</CardTitle>
+          <CardDescription>AI model settings for code reviews</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex gap-4">
-            <Button variant={llmProvider === "groq" ? "default" : "outline"} onClick={() => setLlmProvider("groq")}>
-              Groq API
-            </Button>
-            <Button variant={llmProvider === "ollama" ? "default" : "outline"} onClick={() => setLlmProvider("ollama")}>
-              Ollama (Self-hosted)
-            </Button>
-          </div>
-
-          {llmProvider === "ollama" && (
-            <div className="p-4 bg-gray-50 dark:bg-zinc-900 rounded-md space-y-4">
-              <div>
-                <h4 className="font-medium mb-2">Ollama Configuration</h4>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Connected to: <code className="bg-gray-200 dark:bg-zinc-800 px-2 py-1 rounded">{ollamaHost}</code>
-                </p>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="p-4 bg-zinc-800 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-medium text-white">Groq API</span>
+                <Badge className="bg-emerald-500">Primary</Badge>
               </div>
-
-              <div className="flex items-center gap-2">
-                <span className="text-sm">Status:</span>
-                <Badge className={ollamaStatus === "online" ? "bg-green-500" : ollamaStatus === "offline" ? "bg-red-500" : "bg-yellow-500"}>
-                  {ollamaStatus === "checking" ? "Checking..." : ollamaStatus}
+              <p className="text-sm text-zinc-400">Fast cloud-based inference using Llama 3.1</p>
+              <p className="text-xs text-zinc-500 mt-2">Model: llama-3.1-8b-instant</p>
+            </div>
+            <div className="p-4 bg-zinc-800 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-medium text-white">Ollama</span>
+                <Badge variant="outline" className={ollamaStatus?.status === "online" ? "border-emerald-500 text-emerald-400" : "border-zinc-600 text-zinc-500"}>
+                  {checking ? "Checking..." : ollamaStatus?.status || "Unknown"}
                 </Badge>
-                <Button variant="outline" size="sm" onClick={checkOllamaStatus}>
-                  Refresh
-                </Button>
               </div>
-
-              {ollamaModels.length > 0 && (
-                <div>
-                  <span className="text-sm font-medium">Available Models:</span>
-                  <div className="flex gap-2 mt-1 flex-wrap">
-                    {ollamaModels.map((m) => (
-                      <Badge key={m} variant="outline">{m}</Badge>
-                    ))}
-                  </div>
+              <p className="text-sm text-zinc-400">Self-hosted fallback option</p>
+              {ollamaStatus?.host && (
+                <p className="text-xs text-zinc-500 mt-2">Host: {ollamaStatus.host}</p>
+              )}
+              {ollamaStatus?.models?.length > 0 && (
+                <div className="flex gap-1 mt-2">
+                  {ollamaStatus.models.map(m => (
+                    <Badge key={m} variant="outline" className="text-xs">{m}</Badge>
+                  ))}
                 </div>
               )}
+              <Button variant="outline" size="sm" onClick={checkOllama} disabled={checking} className="mt-3">
+                {checking ? "Checking..." : "Check Status"}
+              </Button>
             </div>
-          )}
-
-          {llmProvider === "groq" && (
-            <div className="p-4 bg-gray-50 dark:bg-zinc-900 rounded-md">
-              <h4 className="font-medium mb-2">Groq API Configuration</h4>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Using Groq cloud API. Configure via environment variables.</p>
-            </div>
-          )}
+          </div>
         </CardContent>
       </Card>
 
-      <Card>
+      {/* GitHub Webhook */}
+      <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader>
-          <CardTitle>GitHub Integration</CardTitle>
-          <CardDescription>Configure GitHub access for PR reviews</CardDescription>
+          <CardTitle className="text-white">🔗 GitHub Webhook</CardTitle>
+          <CardDescription>Configure automatic PR reviews</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <label className="text-sm text-zinc-400 block mb-1">Webhook URL</label>
+            <div className="flex gap-2">
+              <input
+                value={webhookUrl}
+                readOnly
+                className="flex-1 px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white font-mono text-sm"
+              />
+              <Button variant="outline" onClick={copyWebhookUrl}>Copy</Button>
+              <Button variant="outline" onClick={testWebhook} disabled={testingWebhook}>
+                {testingWebhook ? "Testing..." : "Test"}
+              </Button>
+            </div>
+            {webhookResult && (
+              <p className={`text-sm mt-2 ${webhookResult.includes("✅") ? "text-emerald-400" : "text-red-400"}`}>
+                {webhookResult}
+              </p>
+            )}
+          </div>
+          <div className="p-4 bg-zinc-800 rounded-lg">
+            <h4 className="font-medium text-white mb-2">Setup Instructions</h4>
+            <ol className="text-sm text-zinc-400 space-y-1 list-decimal list-inside">
+              <li>Go to your GitHub repo → Settings → Webhooks</li>
+              <li>Click &quot;Add webhook&quot;</li>
+              <li>Paste the webhook URL above</li>
+              <li>Set Content type to &quot;application/json&quot;</li>
+              <li>Select events: &quot;Pull requests&quot; and &quot;Issue comments&quot;</li>
+              <li>Save the webhook</li>
+            </ol>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Review Categories */}
+      <Card className="bg-zinc-900 border-zinc-800">
+        <CardHeader>
+          <CardTitle className="text-white">🔍 Review Categories</CardTitle>
+          <CardDescription>What the AI reviews in your code</CardDescription>
         </CardHeader>
         <CardContent>
-          <div>
-            <h4 className="font-medium mb-2">Webhook URL</h4>
-            <code className="block p-2 bg-gray-100 dark:bg-zinc-900 rounded text-sm">
-              {typeof window !== "undefined" ? `${window.location.origin}/api/webhook/github` : "/api/webhook/github"}
-            </code>
+          <div className="grid md:grid-cols-2 gap-3">
+            {[
+              { icon: "🔒", name: "Security", desc: "SQL injection, XSS, auth issues, secrets" },
+              { icon: "🐛", name: "Bugs", desc: "Logic errors, null handling, edge cases" },
+              { icon: "⚡", name: "Performance", desc: "N+1 queries, memory leaks, algorithms" },
+              { icon: "✨", name: "Best Practices", desc: "SOLID, DRY, TypeScript, clean code" },
+            ].map(cat => (
+              <div key={cat.name} className="flex items-start gap-3 p-3 bg-zinc-800 rounded-lg">
+                <span className="text-xl">{cat.icon}</span>
+                <div>
+                  <div className="font-medium text-white">{cat.name}</div>
+                  <div className="text-sm text-zinc-500">{cat.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Danger Zone */}
+      <Card className="bg-zinc-900 border-red-900/50">
+        <CardHeader>
+          <CardTitle className="text-red-400">⚠️ Danger Zone</CardTitle>
+          <CardDescription>Irreversible actions</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between p-4 bg-red-950/20 rounded-lg border border-red-900/30">
+            <div>
+              <div className="font-medium text-white">Clear Review History</div>
+              <div className="text-sm text-zinc-500">Delete all review records from the database</div>
+            </div>
+            <Button variant="outline" className="text-red-400 border-red-400 hover:bg-red-950" onClick={clearAllReviews}>
+              Clear All
+            </Button>
           </div>
         </CardContent>
       </Card>

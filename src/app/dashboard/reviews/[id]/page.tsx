@@ -68,10 +68,26 @@ export default function ReviewDetailPage() {
     }
   };
 
+  const deleteReview = async () => {
+    if (!review || !confirm("Delete this review?")) return;
+    await fetch(`/api/reviews/${review.id}`, { method: "DELETE" });
+    router.push("/dashboard/reviews");
+  };
+
   const copySuggestion = (index: number, text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(index);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const exportReview = () => {
+    if (!review) return;
+    const blob = new Blob([JSON.stringify(review, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `review-${review.repo_full_name.replace("/", "-")}-pr${review.pr_number}.json`;
+    a.click();
   };
 
   if (loading) {
@@ -136,12 +152,14 @@ export default function ReviewDetailPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={exportReview}>📥 Export</Button>
           <Button variant="outline" onClick={rerunReview} disabled={rerunning}>
             {rerunning ? "Re-reviewing..." : "🔄 Re-review"}
           </Button>
           <a href={`https://github.com/${review.repo_full_name}/pull/${review.pr_number}`} target="_blank" rel="noopener noreferrer">
             <Button className="bg-zinc-800 hover:bg-zinc-700">View on GitHub →</Button>
           </a>
+          <Button variant="outline" onClick={deleteReview} className="text-red-400 hover:text-red-300">🗑️</Button>
         </div>
       </div>
 

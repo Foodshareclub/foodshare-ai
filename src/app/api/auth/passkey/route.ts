@@ -3,11 +3,18 @@ import { createClient } from "@/lib/supabase/server";
 import { ok, err, handleError } from "@/lib/api";
 import crypto from "crypto";
 
+function getRpId(request: NextRequest): string {
+  const host = request.headers.get("host") || "localhost";
+  // Remove port if present
+  return host.split(":")[0];
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { action, ...body } = await request.json();
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
+    const rpId = getRpId(request);
 
     if (action === "register-options") {
       if (!user) return err("Unauthorized - please login first", 401);
@@ -23,7 +30,7 @@ export async function POST(request: NextRequest) {
 
       return ok({
         challenge,
-        rp: { name: "FoodShare AI", id: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").hostname },
+        rp: { name: "FoodShare AI", id: rpId },
         user: { id: credUserId, name: user.email, displayName: user.email?.split("@")[0] },
         pubKeyCredParams: [{ alg: -7, type: "public-key" }, { alg: -257, type: "public-key" }],
         timeout: 300000,
@@ -56,17 +63,15 @@ export async function POST(request: NextRequest) {
       const email = body.email?.toLowerCase();
       if (!email) return err("Email required");
 
-      // Get passkeys for this email by checking existing passkeys with matching user
       const { data: passkeys } = await supabase
         .from("passkeys")
         .select("credentialId, supabaseUserId")
         .order("createdAt", { ascending: false });
 
-      // We need to verify the email matches - store challenge with email for verification
       const challengeId = crypto.randomUUID();
       await supabase.from("passkey_challenges").insert({
         id: challengeId,
-        userId: email, // Store email temporarily
+        userId: email,
         challenge,
         type: "authentication",
         expiresAt: new Date(Date.now() + 300000).toISOString(),
@@ -77,7 +82,7 @@ export async function POST(request: NextRequest) {
       return ok({
         challenge,
         challengeId,
-        rpId: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").hostname,
+        rpId,
         allowCredentials: passkeys.map(p => ({ id: p.credentialId, type: "public-key", transports: ["internal"] })),
         timeout: 300000,
         userVerification: "preferred",
@@ -87,7 +92,6 @@ export async function POST(request: NextRequest) {
     if (action === "auth-verify") {
       const { credential, email, challengeId } = body;
 
-      // Verify challenge exists
       const { data: challengeData } = await supabase
         .from("passkey_challenges")
         .select("*")
@@ -96,7 +100,6 @@ export async function POST(request: NextRequest) {
 
       if (!challengeData) return err("Challenge expired or invalid");
 
-      // Find passkey
       const { data: passkey } = await supabase
         .from("passkeys")
         .select("*")
@@ -105,13 +108,9 @@ export async function POST(request: NextRequest) {
 
       if (!passkey) return err("Passkey not found");
 
-      // Update counter
       await supabase.from("passkeys").update({ counter: (passkey.counter || 0) + 1 }).eq("id", passkey.id);
-      
-      // Clean up challenge
       await supabase.from("passkey_challenges").delete().eq("id", challengeId);
 
-      // Send magic link to complete auth
       const { error: authError } = await supabase.auth.signInWithOtp({ 
         email, 
         options: { shouldCreateUser: false } 

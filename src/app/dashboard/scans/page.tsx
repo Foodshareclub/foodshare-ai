@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,18 +21,57 @@ interface Scan {
   created_at: string;
 }
 
+const LIMIT = 20;
+
 export default function ScansPage() {
   const [scans, setScans] = useState<Scan[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [scanning, setScanning] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  const fetchScans = useCallback(async (offset = 0, append = false) => {
+    if (offset === 0) setLoading(true);
+    else setLoadingMore(true);
+
+    try {
+      const res = await fetch(`/api/scans?limit=${LIMIT}&offset=${offset}`);
+      const data = await res.json();
+      const newScans = data.scans || [];
+      
+      setScans(prev => append ? [...prev, ...newScans] : newScans);
+      setHasMore(newScans.length === LIMIT);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, []);
 
   useEffect(() => {
-    fetch("/api/scans?limit=50").then(r => r.json()).then(data => {
-      setScans(data.scans || []);
-      setLoading(false);
-    });
-  }, []);
+    fetchScans();
+  }, [fetchScans]);
+
+  useEffect(() => {
+    if (loading || loadingMore || !hasMore) return;
+
+    observerRef.current = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+          fetchScans(scans.length, true);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (loadMoreRef.current) {
+      observerRef.current.observe(loadMoreRef.current);
+    }
+
+    return () => observerRef.current?.disconnect();
+  }, [loading, loadingMore, hasMore, scans.length, fetchScans]);
 
   const triggerScan = async (repo?: string) => {
     setScanning(repo || "all");
@@ -41,10 +80,7 @@ export default function ScansPage() {
         ? `https://mojsubkqjdruhpxbzgme.supabase.co/functions/v1/scan-repos?repo=${repo}`
         : "https://mojsubkqjdruhpxbzgme.supabase.co/functions/v1/scan-repos";
       await fetch(url, { headers: { Authorization: "Bearer foodshare-cron-2026" } });
-      // Refresh
-      const res = await fetch("/api/scans?limit=50");
-      const data = await res.json();
-      setScans(data.scans || []);
+      fetchScans();
     } finally {
       setScanning(null);
     }
@@ -58,13 +94,7 @@ export default function ScansPage() {
     SAFE: "text-emerald-400", LOW: "text-green-400", MEDIUM: "text-yellow-400", HIGH: "text-orange-400", CRITICAL: "text-red-400"
   };
 
-  // Group by repo, show latest
-  const latestByRepo = scans.reduce((acc, scan) => {
-    if (!acc[scan.repo_full_name] || new Date(scan.created_at) > new Date(acc[scan.repo_full_name].created_at)) {
-      acc[scan.repo_full_name] = scan;
-    }
-    return acc;
-  }, {} as Record<string, Scan>);
+  const uniqueRepos = new Set(scans.map(s => s.repo_full_name)).size;
 
   if (loading) return <div className="flex items-center justify-center h-64 text-zinc-500">Loading...</div>;
 
@@ -73,15 +103,15 @@ export default function ScansPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Security Scans</h1>
-          <p className="text-zinc-500">{Object.keys(latestByRepo).length} repos • {scans.length} total scans</p>
+          <p className="text-zinc-500">{uniqueRepos} repos • {scans.length} scans loaded</p>
         </div>
         <Button onClick={() => triggerScan()} disabled={!!scanning} className="bg-emerald-600 hover:bg-emerald-700">
           {scanning === "all" ? "Scanning..." : "🔍 Scan All Repos"}
         </Button>
       </div>
 
-      <div className="grid gap-4">
-        {Object.values(latestByRepo).sort((a, b) => a.security_score - b.security_score).map(scan => {
+      <div className="space-y-4">
+        {scans.map(scan => {
           const grade = scan.scan_metadata?.grade || (scan.security_score >= 90 ? "A" : scan.security_score >= 80 ? "B" : scan.security_score >= 70 ? "C" : scan.security_score >= 60 ? "D" : "F");
           const threat = scan.scan_metadata?.threat_level || "MEDIUM";
           const isExpanded = expanded === scan.id;
@@ -99,7 +129,7 @@ export default function ScansPage() {
                         <span className="font-medium text-white">{scan.repo_full_name}</span>
                         <Badge variant="outline" className={threatColor[threat]}>{threat}</Badge>
                       </div>
-                      <p className="text-sm text-zinc-500 mt-1">{scan.summary}</p>
+                      <p className="text-sm text-zinc-500 mt-1 line-clamp-1">{scan.summary}</p>
                       <div className="flex gap-4 mt-2 text-xs text-zinc-600">
                         <span>Score: {scan.security_score}/100</span>
                         <span>Files: {scan.files_scanned}</span>
@@ -109,11 +139,10 @@ export default function ScansPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     {scan.scan_metadata?.by_severity && (
-                      <div className="flex gap-1 text-xs">
+                      <div className="hidden sm:flex gap-1 text-xs">
                         {scan.scan_metadata.by_severity.critical > 0 && <Badge className="bg-red-500">{scan.scan_metadata.by_severity.critical} crit</Badge>}
                         {scan.scan_metadata.by_severity.high > 0 && <Badge className="bg-orange-500">{scan.scan_metadata.by_severity.high} high</Badge>}
                         {scan.scan_metadata.by_severity.medium > 0 && <Badge className="bg-yellow-600">{scan.scan_metadata.by_severity.medium} med</Badge>}
-                        {scan.scan_metadata.by_severity.low > 0 && <Badge className="bg-zinc-600">{scan.scan_metadata.by_severity.low} low</Badge>}
                       </div>
                     )}
                     <Button variant="outline" size="sm" onClick={() => setExpanded(isExpanded ? null : scan.id)}>
@@ -127,8 +156,8 @@ export default function ScansPage() {
 
                 {isExpanded && scan.issues?.length > 0 && (
                   <div className="mt-4 border-t border-zinc-800 pt-4">
-                    <h4 className="text-sm font-medium text-white mb-2">Issues Found ({scan.issues.length})</h4>
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                    <h4 className="text-sm font-medium text-white mb-2">Issues ({scan.issues.length})</h4>
+                    <div className="space-y-2 max-h-80 overflow-y-auto">
                       {scan.issues.map((issue: any, i: number) => (
                         <div key={i} className="bg-zinc-800 rounded p-3 text-sm">
                           <div className="flex items-center gap-2 mb-1">
@@ -149,6 +178,12 @@ export default function ScansPage() {
             </Card>
           );
         })}
+
+        {/* Infinite scroll trigger */}
+        <div ref={loadMoreRef} className="h-10 flex items-center justify-center">
+          {loadingMore && <span className="text-zinc-500">Loading more...</span>}
+          {!hasMore && scans.length > 0 && <span className="text-zinc-600 text-sm">All scans loaded</span>}
+        </div>
       </div>
     </div>
   );

@@ -28,7 +28,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [pathname]);
 
   return (
-    <div className="flex min-h-screen bg-zinc-950">
+    <div className="flex h-screen overflow-hidden bg-zinc-950">
       {/* Mobile Header */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-zinc-900 border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
         <Link href="/dashboard" className="flex items-center gap-2">
@@ -45,9 +45,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="md:hidden fixed inset-0 z-40 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar - fixed, no scroll */}
       <aside className={cn(
-        "fixed md:static inset-y-0 left-0 z-40 w-64 border-r border-zinc-800 bg-zinc-900/95 backdrop-blur transform transition-transform md:transform-none",
+        "fixed md:relative inset-y-0 left-0 z-40 w-64 flex-shrink-0 border-r border-zinc-800 bg-zinc-900 flex flex-col transform transition-transform md:transform-none",
         mobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       )}>
         <div className="p-6 border-b border-zinc-800 hidden md:block">
@@ -60,7 +60,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </Link>
         </div>
         
-        <nav className="p-4 space-y-1 mt-16 md:mt-0">
+        <nav className="p-4 space-y-1 mt-16 md:mt-0 flex-1">
           {navItems.map((item) => (
             <Link
               key={item.href}
@@ -78,7 +78,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           ))}
         </nav>
 
-        <div className="absolute bottom-0 left-0 w-64 p-4 border-t border-zinc-800">
+        <div className="p-4 border-t border-zinc-800">
           <div className="grid grid-cols-2 gap-2 text-center">
             <div className="p-2 rounded-lg bg-zinc-800/50">
               <div className="text-lg font-bold text-white">{stats.reviews}</div>
@@ -92,8 +92,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-auto pt-16 md:pt-0">
+      {/* Main content - scrollable */}
+      <main className="flex-1 overflow-y-auto pt-16 md:pt-0">
         <div className="p-4 md:p-8 max-w-6xl">{children}</div>
       </main>
     </div>

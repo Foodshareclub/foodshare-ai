@@ -4,8 +4,7 @@ import { ok, err, handleError } from "@/lib/api";
 import crypto from "crypto";
 
 function getRpId(request: NextRequest): string {
-  const host = request.headers.get("host") || "localhost";
-  // Remove port if present
+  const host = request.headers.get("host") || "ai.foodshare.club";
   return host.split(":")[0];
 }
 

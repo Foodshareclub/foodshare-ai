@@ -13,20 +13,32 @@ interface Review {
   pr_number: number;
   status: string;
   result: {
+    security_score?: number;
+    threat_level?: string;
     summary: {
       overview: string;
-      changes_description: string;
+      changes_description?: string;
       risk_assessment: string;
       recommendations: string[];
-      praise: string[];
+      praise?: string[];
+      critical_findings?: string[];
     };
-    walkthrough: Array<{ path: string; summary: string; changes: string[] }>;
+    vulnerabilities?: Array<{
+      type: string;
+      severity: string;
+      path: string;
+      line: number;
+      description: string;
+      fix?: string;
+      cwe?: string;
+    }>;
+    walkthrough?: Array<{ path: string; summary: string; changes: string[] }>;
     line_comments: Array<{
       path: string;
       line: number;
       body: string;
       severity: string;
-      category: string;
+      category?: string;
       suggestion?: string;
     }>;
     approval_recommendation: string;
@@ -48,7 +60,7 @@ export default function ReviewDetailPage() {
   const [previousReviews, setPreviousReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [rerunning, setRerunning] = useState(false);
-  const [activeTab, setActiveTab] = useState<"summary" | "issues" | "files" | "history">("summary");
+  const [activeTab, setActiveTab] = useState<"summary" | "security" | "issues" | "files" | "history">("summary");
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [filterSeverity, setFilterSeverity] = useState<string>("all");
 
@@ -192,7 +204,17 @@ export default function ReviewDetailPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
+        {result?.security_score !== undefined && (
+          <Card className={`bg-zinc-900 border-zinc-800 ${result.security_score < 50 ? "border-red-500/50" : result.security_score < 80 ? "border-yellow-500/50" : "border-emerald-500/50"}`}>
+            <CardContent className="pt-6 text-center">
+              <div className={`text-3xl font-bold ${result.security_score < 50 ? "text-red-400" : result.security_score < 80 ? "text-yellow-400" : "text-emerald-400"}`}>
+                {result.security_score}/100
+              </div>
+              <div className="text-sm text-zinc-500">Security Score</div>
+            </CardContent>
+          </Card>
+        )}
         <Card className="bg-zinc-900 border-zinc-800">
           <CardContent className="pt-6 text-center">
             <div className="text-3xl font-bold text-red-400">{criticalCount}</div>
@@ -213,17 +235,17 @@ export default function ReviewDetailPage() {
         </Card>
         <Card className="bg-zinc-900 border-zinc-800">
           <CardContent className="pt-6 text-center">
-            <div className="text-3xl font-bold text-white capitalize">
-              {result?.approval_recommendation?.replace("_", " ") || "N/A"}
+            <div className={`text-3xl font-bold capitalize ${result?.threat_level === "CRITICAL" ? "text-red-500" : result?.threat_level === "HIGH" ? "text-red-400" : result?.threat_level === "MEDIUM" ? "text-yellow-400" : "text-emerald-400"}`}>
+              {result?.threat_level || result?.approval_recommendation?.replace("_", " ") || "N/A"}
             </div>
-            <div className="text-sm text-zinc-500">Recommendation</div>
+            <div className="text-sm text-zinc-500">Threat Level</div>
           </CardContent>
         </Card>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-zinc-800">
-        {(["summary", "issues", "files", "history"] as const).map(tab => (
+        {(["summary", "security", "issues", "files", "history"] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -232,6 +254,7 @@ export default function ReviewDetailPage() {
             }`}
           >
             {tab === "summary" && "📋 Summary"}
+            {tab === "security" && `🛡️ Security (${result?.vulnerabilities?.length || 0})`}
             {tab === "issues" && `🔍 Issues (${result?.line_comments?.length || 0})`}
             {tab === "files" && `📁 Files (${result?.walkthrough?.length || 0})`}
             {tab === "history" && `🕐 History (${previousReviews.length})`}
@@ -261,14 +284,14 @@ export default function ReviewDetailPage() {
             </CardContent>
           </Card>
 
-          {result?.summary?.praise?.length > 0 && (
+          {(result?.summary?.praise?.length ?? 0) > 0 && (
             <Card className="bg-emerald-950/30 border-emerald-800">
               <CardHeader>
                 <CardTitle className="text-emerald-400">✨ What&apos;s Good</CardTitle>
               </CardHeader>
               <CardContent>
                 <ul className="space-y-2">
-                  {result.summary.praise.map((p, i) => (
+                  {result?.summary?.praise?.map((p, i) => (
                     <li key={i} className="text-zinc-300 flex items-start gap-2">
                       <span className="text-emerald-400">✓</span> {p}
                     </li>
@@ -295,6 +318,60 @@ export default function ReviewDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {(result?.summary?.critical_findings?.length ?? 0) > 0 && (
+            <Card className="bg-red-950/30 border-red-800">
+              <CardHeader>
+                <CardTitle className="text-red-400">🚨 Critical Findings</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2">
+                  {result?.summary?.critical_findings?.map((f, i) => (
+                    <li key={i} className="text-zinc-300 flex items-start gap-2">
+                      <span className="text-red-400">⚠</span> {f}
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {activeTab === "security" && (
+        <div className="space-y-4">
+          {!result?.vulnerabilities?.length ? (
+            <Card className="bg-emerald-950/30 border-emerald-800">
+              <CardContent className="py-12 text-center">
+                <div className="text-4xl mb-2">🛡️</div>
+                <p className="text-emerald-400">No security vulnerabilities detected</p>
+              </CardContent>
+            </Card>
+          ) : (
+            result.vulnerabilities.map((vuln, i) => (
+              <Card key={i} className={`bg-zinc-900 border-zinc-800 ${vuln.severity === "critical" ? "border-red-500/50" : vuln.severity === "high" ? "border-orange-500/50" : ""}`}>
+                <CardContent className="pt-6">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Badge className={severityColors[vuln.severity] || severityColors.info}>
+                        {vuln.severity}
+                      </Badge>
+                      <Badge variant="outline" className="text-zinc-400">{vuln.type}</Badge>
+                      {vuln.cwe && <Badge variant="outline" className="text-blue-400">{vuln.cwe}</Badge>}
+                    </div>
+                    <code className="text-xs text-zinc-500">{vuln.path}:{vuln.line}</code>
+                  </div>
+                  <p className="text-zinc-300 mb-3">{vuln.description}</p>
+                  {vuln.fix && (
+                    <div className="bg-zinc-800 p-3 rounded-lg">
+                      <p className="text-xs text-zinc-500 mb-1">Suggested Fix:</p>
+                      <p className="text-emerald-400 text-sm">{vuln.fix}</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))
+          )}
         </div>
       )}
 
@@ -316,8 +393,8 @@ export default function ReviewDetailPage() {
                       <Badge className={severityColors[comment.severity] || severityColors.info}>
                         {comment.severity}
                       </Badge>
-                      <span className="text-lg">{categoryIcons[comment.category] || "📝"}</span>
-                      <span className="text-sm text-zinc-500">{comment.category}</span>
+                      <span className="text-lg">{categoryIcons[comment.category || "other"] || "📝"}</span>
+                      <span className="text-sm text-zinc-500">{comment.category || "other"}</span>
                     </div>
                     <a
                       href={`https://github.com/${review.repo_full_name}/pull/${review.pr_number}/files#diff-${comment.path.replace(/[/.]/g, "")}`}

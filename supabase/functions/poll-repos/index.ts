@@ -34,11 +34,11 @@ serve(async (req) => {
 
   const reviewedSet = new Set((recent || []).map(r => `${r.repo_full_name}#${r.pr_number}#${r.head_sha}`));
 
-  // Get pending jobs to skip
+  // Get pending jobs to skip (including those with future retry)
   const { data: pending } = await supabase
     .from("review_jobs")
     .select("repo_full_name, pr_number")
-    .in("status", ["pending", "processing"]);
+    .in("status", ["pending", "processing", "failed"]);
 
   const pendingSet = new Set((pending || []).map(j => `${j.repo_full_name}#${j.pr_number}`));
 

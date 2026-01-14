@@ -59,10 +59,10 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "register-options" }),
       });
-      const options = await optionsRes.json();
-      if (options.error) throw new Error(options.error);
+      const data = await optionsRes.json();
+      if (data.error) throw new Error(data.error);
 
-      const credential = await startRegistration(options);
+      const credential = await startRegistration({ optionsJSON: data });
 
       const verifyRes = await fetch("/api/auth/passkey", {
         method: "POST",

@@ -55,22 +55,22 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'auth-options', email }),
       })
-      const options = await optionsRes.json()
+      const data = await optionsRes.json()
       
-      if (options.error) {
-        setMessage(options.error)
+      if (data.error) {
+        setMessage(data.error)
         setLoading(false)
         return
       }
 
-      // Start WebAuthn authentication
-      const credential = await startAuthentication(options)
+      // Start WebAuthn authentication with correct structure
+      const credential = await startAuthentication({ optionsJSON: data })
 
       // Verify
       const verifyRes = await fetch('/api/auth/passkey', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'auth-verify', credential, email, challengeId: options.challengeId }),
+        body: JSON.stringify({ action: 'auth-verify', credential, email, challengeId: data.challengeId }),
       })
       const result = await verifyRes.json()
 

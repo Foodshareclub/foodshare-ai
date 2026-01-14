@@ -42,16 +42,20 @@ export async function POST(request: NextRequest) {
       if (!user) return err("Unauthorized", 401);
       const { credential } = body;
 
-      await supabase.from("passkeys").insert({
+      const publicKeyBase64 = credential.response?.publicKey || credential.id;
+      const { error: insertError } = await supabase.from("passkeys").insert({
+        id: crypto.randomUUID(),
         supabaseUserId: user.id,
         credentialId: credential.id,
-        publicKey: credential.response?.publicKey || credential.id,
+        publicKey: Buffer.from(publicKeyBase64, "base64url"),
         counter: 0,
         deviceType: "platform",
         backedUp: false,
         transports: credential.response?.transports || [],
         name: body.deviceName || "Fingerprint",
       });
+
+      if (insertError) return err(`Failed to save passkey: ${insertError.message}`, 500);
 
       await supabase.from("passkey_challenges").delete().eq("userId", user.id);
       return ok({ success: true });

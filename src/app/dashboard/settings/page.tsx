@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { startRegistration } from "@simplewebauthn/browser";
 
 interface Stats {
   reviews: number;
@@ -16,6 +17,13 @@ interface OllamaStatus {
   models: string[];
 }
 
+interface Passkey {
+  id: string;
+  device_name: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
 export default function SettingsPage() {
   const [stats, setStats] = useState<Stats>({ reviews: 0, repos: 0 });
   const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
@@ -23,12 +31,63 @@ export default function SettingsPage() {
   const [webhookUrl, setWebhookUrl] = useState("");
   const [testingWebhook, setTestingWebhook] = useState(false);
   const [webhookResult, setWebhookResult] = useState<string | null>(null);
+  const [passkeys, setPasskeys] = useState<Passkey[]>([]);
+  const [registeringPasskey, setRegisteringPasskey] = useState(false);
+  const [passkeyMessage, setPasskeyMessage] = useState("");
 
   useEffect(() => {
     fetch("/api/stats").then(r => r.json()).then(setStats);
     setWebhookUrl(typeof window !== "undefined" ? `${window.location.origin}/api/webhook/github` : "");
     checkOllama();
+    loadPasskeys();
   }, []);
+
+  const loadPasskeys = async () => {
+    try {
+      const res = await fetch("/api/auth/passkey");
+      const data = await res.json();
+      setPasskeys(data.passkeys || []);
+    } catch { /* ignore */ }
+  };
+
+  const registerPasskey = async () => {
+    setRegisteringPasskey(true);
+    setPasskeyMessage("");
+    try {
+      const optionsRes = await fetch("/api/auth/passkey", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "register-options" }),
+      });
+      const options = await optionsRes.json();
+      if (options.error) throw new Error(options.error);
+
+      const credential = await startRegistration(options);
+
+      const verifyRes = await fetch("/api/auth/passkey", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "register-verify", credential, deviceName: navigator.userAgent.split(" ").pop() }),
+      });
+      const result = await verifyRes.json();
+
+      if (result.success) {
+        setPasskeyMessage("✅ Passkey registered successfully!");
+        loadPasskeys();
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (err: any) {
+      setPasskeyMessage(`❌ ${err.message || "Registration failed"}`);
+    }
+    setRegisteringPasskey(false);
+  };
+
+  const deletePasskey = async (id: string) => {
+    if (!confirm("Remove this passkey?")) return;
+    await fetch(`/api/auth/passkey?id=${id}`, { method: "DELETE" });
+    loadPasskeys();
+  };
 
   const checkOllama = async () => {
     setChecking(true);
@@ -97,6 +156,62 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Passkey / Fingerprint Authentication */}
+      <Card className="bg-zinc-900 border-zinc-800">
+        <CardHeader>
+          <CardTitle className="text-white">🔐 Passkey Authentication</CardTitle>
+          <CardDescription>Sign in with fingerprint, Face ID, or security key</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-zinc-400">
+                Passkeys provide passwordless authentication using your device&apos;s biometrics.
+              </p>
+            </div>
+            <Button onClick={registerPasskey} disabled={registeringPasskey} className="bg-emerald-600 hover:bg-emerald-500">
+              {registeringPasskey ? "Registering..." : "+ Add Passkey"}
+            </Button>
+          </div>
+          
+          {passkeyMessage && (
+            <p className={`text-sm ${passkeyMessage.includes("✅") ? "text-emerald-400" : "text-red-400"}`}>
+              {passkeyMessage}
+            </p>
+          )}
+
+          {passkeys.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium text-zinc-400">Registered Passkeys</h4>
+              {passkeys.map(pk => (
+                <div key={pk.id} className="flex items-center justify-between p-3 bg-zinc-800 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">🔑</span>
+                    <div>
+                      <div className="text-sm text-white">{pk.device_name}</div>
+                      <div className="text-xs text-zinc-500">
+                        Added {new Date(pk.created_at).toLocaleDateString()}
+                        {pk.last_used_at && ` • Last used ${new Date(pk.last_used_at).toLocaleDateString()}`}
+                      </div>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm" className="text-red-400 border-red-400" onClick={() => deletePasskey(pk.id)}>
+                    Remove
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {passkeys.length === 0 && (
+            <div className="text-center py-6 text-zinc-500">
+              <p>No passkeys registered yet</p>
+              <p className="text-sm">Add a passkey to enable fingerprint login</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* LLM Configuration */}
       <Card className="bg-zinc-900 border-zinc-800">

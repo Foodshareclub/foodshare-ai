@@ -1,19 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
-import { listUserRepos, listOrgRepos } from "@/lib/github";
+import { NextRequest } from "next/server";
+import { repos } from "@/lib/github";
+import { ok, handleError } from "@/lib/api";
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const org = searchParams.get("org");
-
-    const repos = org ? await listOrgRepos(org) : await listUserRepos();
-
-    return NextResponse.json(repos);
+    const org = new URL(request.url).searchParams.get("org");
+    const data = org ? await repos.org(org) : await repos.user();
+    return ok(data);
   } catch (error) {
-    console.error("Repos error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to fetch repos" },
-      { status: 500 }
-    );
+    return handleError(error);
   }
 }

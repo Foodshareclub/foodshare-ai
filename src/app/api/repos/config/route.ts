@@ -1,45 +1,47 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { ok, err, handleError } from "@/lib/api";
 
 export async function GET() {
-  const supabase = await createClient();
-
-  const { data, error } = await supabase
-    .from("repo_configs")
-    .select("*")
-    .order("updated_at", { ascending: false });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.from("repo_configs").select("*").order("updated_at", { ascending: false });
+    if (error) throw error;
+    return ok({ configs: data });
+  } catch (error) {
+    return handleError(error);
   }
-
-  return NextResponse.json({ configs: data });
 }
 
 export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const { full_name } = body;
+  try {
+    const { full_name, enabled = true, auto_review = true, categories, ignore_paths, custom_instructions } = await request.json();
+    if (!full_name?.includes("/")) return err("Invalid repo format (expected owner/repo)");
 
-  if (!full_name?.includes("/")) {
-    return NextResponse.json({ error: "Invalid repo format" }, { status: 400 });
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("repo_configs")
+      .upsert({ full_name, enabled, auto_review, categories: categories || ["security", "bug", "performance"], ignore_paths, custom_instructions, updated_at: new Date().toISOString() }, { onConflict: "full_name" })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return ok({ config: data });
+  } catch (error) {
+    return handleError(error);
   }
+}
 
-  const supabase = await createClient();
+export async function DELETE(request: NextRequest) {
+  try {
+    const full_name = new URL(request.url).searchParams.get("full_name");
+    if (!full_name) return err("full_name required");
 
-  const { data, error } = await supabase
-    .from("repo_configs")
-    .insert({
-      full_name,
-      enabled: true,
-      auto_review: true,
-      categories: ["security", "bug", "performance", "best_practices"],
-    })
-    .select()
-    .single();
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const supabase = await createClient();
+    const { error } = await supabase.from("repo_configs").delete().eq("full_name", full_name);
+    if (error) throw error;
+    return ok({ success: true });
+  } catch (error) {
+    return handleError(error);
   }
-
-  return NextResponse.json({ config: data });
 }

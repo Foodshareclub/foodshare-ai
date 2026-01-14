@@ -58,7 +58,7 @@ export async function reviewPullRequest(
   config?: RepoConfig,
   options?: { depth?: "quick" | "standard" | "deep"; focus_areas?: string[] }
 ): Promise<CodeReviewResult & { headSha: string; isIncremental: boolean }> {
-  const prData = await getPullRequest(owner, repo, prNumber);
+  const prData = await getPullRequest(owner, repo, prNumber) as any;
   const headSha = prData.head.sha;
 
   let diff: string;
@@ -224,8 +224,8 @@ export async function reviewAndPost(
   if (!options?.depth) {
     try {
       const [prData, prFiles] = await Promise.all([
-        getPullRequest(owner, repo, prNumber),
-        getPullRequestFiles(owner, repo, prNumber),
+        getPullRequest(owner, repo, prNumber) as Promise<any>,
+        getPullRequestFiles(owner, repo, prNumber) as Promise<any[]>,
       ]);
       const ctx: PRContext = {
         files_changed: prData.changed_files || 0,

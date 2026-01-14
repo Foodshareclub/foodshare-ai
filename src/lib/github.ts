@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 const GITHUB_API = "https://api.github.com";
 
 class GitHubError extends Error {
@@ -8,99 +7,73 @@ class GitHubError extends Error {
   }
 }
 
-function getHeaders() {
+function getToken() {
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error("GITHUB_TOKEN not configured");
-  return {
-    Authorization: `Bearer ${token}`,
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
+  return token;
 }
 
-async function ghFetch(endpoint: string, init?: RequestInit): Promise<any> {
-  const res = await fetch(`${GITHUB_API}${endpoint}`, { ...init, headers: { ...getHeaders(), ...init?.headers } });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new GitHubError(res.status, endpoint, body || res.statusText);
-  }
+const headers = () => ({
+  Authorization: `Bearer ${getToken()}`,
+  Accept: "application/vnd.github+json",
+  "X-GitHub-Api-Version": "2022-11-28",
+});
+
+async function gh<T = unknown>(endpoint: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${GITHUB_API}${endpoint}`, { ...init, headers: { ...headers(), ...init?.headers } });
+  if (!res.ok) throw new GitHubError(res.status, endpoint, await res.text().catch(() => res.statusText));
   return res.json();
 }
 
-async function ghFetchText(endpoint: string, accept: string): Promise<string> {
-  const res = await fetch(`${GITHUB_API}${endpoint}`, { headers: { ...getHeaders(), Accept: accept } });
+async function ghText(endpoint: string, accept: string): Promise<string> {
+  const res = await fetch(`${GITHUB_API}${endpoint}`, { headers: { ...headers(), Accept: accept } });
   if (!res.ok) throw new GitHubError(res.status, endpoint, res.statusText);
   return res.text();
 }
 
-export async function getPullRequest(owner: string, repo: string, prNumber: number) {
-  return ghFetch(`/repos/${owner}/${repo}/pulls/${prNumber}`);
-}
-
-export async function getPullRequestDiff(owner: string, repo: string, prNumber: number) {
-  return ghFetchText(`/repos/${owner}/${repo}/pulls/${prNumber}`, "application/vnd.github.v3.diff");
-}
-
-export async function getCompareCommits(owner: string, repo: string, base: string, head: string) {
-  return ghFetchText(`/repos/${owner}/${repo}/compare/${base}...${head}`, "application/vnd.github.v3.diff");
-}
-
-export async function getPullRequestCommits(owner: string, repo: string, prNumber: number) {
-  return ghFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/commits`);
-}
-
-export async function getPullRequestFiles(owner: string, repo: string, prNumber: number) {
-  return ghFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/files`);
-}
-
-export async function createReview(
-  owner: string,
-  repo: string,
-  prNumber: number,
-  body: string,
-  event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT" = "COMMENT",
-  comments?: Array<{ path: string; line: number; body: string }>
-) {
-  const payload: Record<string, unknown> = { body, event };
-  if (comments?.length) payload.comments = comments;
-  return ghFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/reviews`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function createReviewComment(
-  owner: string,
-  repo: string,
-  prNumber: number,
-  body: string,
-  inReplyTo: number
-) {
-  return ghFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/comments`, {
-    method: "POST",
-    body: JSON.stringify({ body, in_reply_to: inReplyTo }),
-  });
-}
-
-export async function listUserRepos() {
-  return ghFetch(`/user/repos?per_page=100&sort=updated`);
-}
-
-export async function listOrgRepos(org: string) {
-  return ghFetch(`/orgs/${org}/repos?per_page=100&sort=updated`);
-}
-
-export async function listPullRequests(owner: string, repo: string, state: "open" | "closed" | "all" = "open") {
-  const allPulls: any[] = [];
-  let page = 1;
-  
-  while (true) {
-    const data = await ghFetch(`/repos/${owner}/${repo}/pulls?state=${state}&per_page=100&page=${page}`);
-    if (!Array.isArray(data) || data.length === 0) break;
-    allPulls.push(...data);
+async function ghPaginate<T>(endpoint: string): Promise<T[]> {
+  const results: T[] = [];
+  for (let page = 1; ; page++) {
+    const data = await gh<T[]>(`${endpoint}${endpoint.includes("?") ? "&" : "?"}per_page=100&page=${page}`);
+    if (!data?.length) break;
+    results.push(...data);
     if (data.length < 100) break;
-    page++;
   }
-  
-  return allPulls;
+  return results;
 }
+
+// PR operations
+export const pr = {
+  get: (owner: string, repo: string, num: number) => gh(`/repos/${owner}/${repo}/pulls/${num}`),
+  diff: (owner: string, repo: string, num: number) => ghText(`/repos/${owner}/${repo}/pulls/${num}`, "application/vnd.github.v3.diff"),
+  commits: (owner: string, repo: string, num: number) => gh(`/repos/${owner}/${repo}/pulls/${num}/commits`),
+  files: (owner: string, repo: string, num: number) => gh(`/repos/${owner}/${repo}/pulls/${num}/files`),
+  list: (owner: string, repo: string, state: "open" | "closed" | "all" = "open") => ghPaginate(`/repos/${owner}/${repo}/pulls?state=${state}`),
+  compare: (owner: string, repo: string, base: string, head: string) => ghText(`/repos/${owner}/${repo}/compare/${base}...${head}`, "application/vnd.github.v3.diff"),
+};
+
+// Review operations
+export const review = {
+  create: (owner: string, repo: string, num: number, body: string, event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT" = "COMMENT", comments?: { path: string; line: number; body: string }[]) =>
+    gh(`/repos/${owner}/${repo}/pulls/${num}/reviews`, { method: "POST", body: JSON.stringify({ body, event, ...(comments?.length && { comments }) }) }),
+  comment: (owner: string, repo: string, num: number, body: string, inReplyTo: number) =>
+    gh(`/repos/${owner}/${repo}/pulls/${num}/comments`, { method: "POST", body: JSON.stringify({ body, in_reply_to: inReplyTo }) }),
+};
+
+// Repo operations
+export const repos = {
+  user: () => gh(`/user/repos?per_page=100&sort=updated`),
+  org: (org: string) => gh(`/orgs/${org}/repos?per_page=100&sort=updated`),
+};
+
+// Legacy exports for compatibility
+export const getPullRequest = pr.get;
+export const getPullRequestDiff = pr.diff;
+export const getCompareCommits = pr.compare;
+export const getPullRequestCommits = pr.commits;
+export const getPullRequestFiles = pr.files;
+export const createReview = review.create;
+export const createReviewComment = review.comment;
+export const listUserRepos = repos.user;
+export const listOrgRepos = repos.org;
+export const listPullRequests = pr.list;

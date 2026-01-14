@@ -1,0 +1,2 @@
+# Allow up to 5 minutes for deep security analysis
+wall_clock = 300000

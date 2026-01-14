@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     // Get files for analysis
     let files: string[] = [];
     try {
-      const prFiles = await getPullRequestFiles(repo.owner.login, repo.name, pr.number);
+      const prFiles = await getPullRequestFiles(repo.owner.login, repo.name, pr.number) as any[];
       files = prFiles.map((f: any) => f.filename);
     } catch { /* ignore */ }
 

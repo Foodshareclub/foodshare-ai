@@ -8,41 +8,70 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") || "";
 
-const REVIEW_PROMPT = `You are a security auditor. Analyze this code diff for vulnerabilities.
+const REVIEW_PROMPT = `You are an elite security auditor performing a DEEP multi-pass security analysis. Your job is to find EVERY vulnerability, no matter how subtle.
 
-SCAN FOR:
-- Injection (SQL, XSS, command)
-- Hardcoded secrets/credentials
-- Auth/authz flaws
-- Data leaks
-- Backdoors (eval, obfuscated code)
-- SSRF, path traversal
+## ANALYSIS METHODOLOGY
+**PASS 1 - Surface Scan:** Identify obvious vulnerabilities
+**PASS 2 - Deep Analysis:** Trace data flows, check trust boundaries
+**PASS 3 - Verification:** Confirm findings, eliminate false positives
 
-RESPOND WITH THIS EXACT JSON FORMAT:
+## OWASP TOP 10 (2021) - CHECK ALL:
+A01: Broken Access Control - Missing auth, IDOR, privilege escalation, CORS misconfig
+A02: Cryptographic Failures - Weak algorithms, hardcoded keys, missing encryption, bad TLS
+A03: Injection - SQL, NoSQL, OS command, LDAP, XPath, template, header injection
+A04: Insecure Design - Missing rate limits, business logic flaws, trust boundary violations
+A05: Security Misconfiguration - Debug enabled, default creds, verbose errors, missing headers
+A06: Vulnerable Components - Outdated deps, known CVEs, typosquatting packages
+A07: Auth Failures - Weak passwords, missing MFA, session fixation, credential stuffing
+A08: Data Integrity Failures - Insecure deserialization, unsigned updates, CI/CD tampering
+A09: Logging Failures - Missing audit logs, log injection, sensitive data in logs
+A10: SSRF - Unvalidated URLs, internal service access, cloud metadata exposure
+
+## CRITICAL THREAT PATTERNS:
+- **BACKDOORS:** eval(), Function(), vm.runInContext, child_process, hidden routes, magic params
+- **SECRETS:** API keys, passwords, tokens, private keys, connection strings (check .env patterns)
+- **DATA EXFIL:** Unauthorized fetch/axios, WebSocket to external, DNS exfiltration patterns
+- **SUPPLY CHAIN:** Suspicious dependencies, postinstall scripts, typosquatting
+- **LOGIC BOMBS:** Time-based triggers, conditional malicious code, obfuscated payloads
+
+## CWE REFERENCES - Tag each finding:
+CWE-79 (XSS), CWE-89 (SQLi), CWE-94 (Code Injection), CWE-78 (OS Command),
+CWE-22 (Path Traversal), CWE-918 (SSRF), CWE-502 (Deserialization),
+CWE-798 (Hardcoded Creds), CWE-306 (Missing Auth), CWE-862 (Missing Authz),
+CWE-327 (Weak Crypto), CWE-330 (Weak Random), CWE-611 (XXE), CWE-776 (XML Bomb)
+
+## RESPONSE FORMAT (strict JSON):
 {
-  "security_score": <0-100>,
+  "security_score": <0-100, be HARSH - 100=perfect, 0=critical breach>,
   "threat_level": "<CRITICAL|HIGH|MEDIUM|LOW|SAFE>",
+  "owasp_violations": ["A01", "A03"],
   "summary": {
-    "overview": "<1-2 sentences>",
-    "critical_findings": ["<critical issues>"],
+    "overview": "<comprehensive security assessment>",
+    "critical_findings": ["<each critical issue>"],
     "risk_assessment": "<Critical|High|Medium|Low>",
-    "recommendations": ["<fixes>"]
+    "attack_vectors": ["<how attacker could exploit>"],
+    "recommendations": ["<specific fixes with code>"]
   },
-  "vulnerabilities": [
-    {
-      "type": "<INJECTION|XSS|HARDCODED_SECRET|BACKDOOR|AUTH_FLAW|DATA_LEAK|SSRF|PATH_TRAVERSAL>",
-      "severity": "<critical|high|medium|low>",
-      "path": "<file.ts>",
-      "line": <number>,
-      "description": "<what's wrong>",
-      "fix": "<how to fix>"
-    }
-  ],
-  "line_comments": [{"path": "<file>", "line": <n>, "body": "<issue>", "severity": "<critical|high|medium|low>"}],
-  "approval_recommendation": "<approve|request_changes|comment>"
+  "vulnerabilities": [{
+    "type": "<OWASP category or threat pattern>",
+    "cwe": "<CWE-XXX>",
+    "severity": "<critical|high|medium|low>",
+    "cvss_estimate": <0.0-10.0>,
+    "path": "<file path>",
+    "line": <line number>,
+    "code": "<vulnerable code>",
+    "description": "<detailed explanation>",
+    "impact": "<attack scenario>",
+    "fix": "<exact remediation code>",
+    "references": ["<relevant security docs>"]
+  }],
+  "line_comments": [{"path": "<file>", "line": <n>, "body": "<issue + CWE>", "severity": "<level>", "suggestion": "<fix>"}],
+  "approval_recommendation": "<approve|request_changes|comment>",
+  "requires_security_review": <true if CRITICAL/HIGH findings>,
+  "auto_mergeable": <true only if score >= 90 and no HIGH+ findings>
 }
 
-Return ONLY valid JSON. No markdown.`;
+THINK LIKE AN ATTACKER. Assume malicious intent. Miss nothing. Return ONLY valid JSON.`;
 
 async function ghFetch(endpoint: string, options?: RequestInit) {
   const res = await fetch(`https://api.github.com${endpoint}`, {
@@ -60,7 +89,8 @@ async function processJob(supabase: any, groq: any, job: any): Promise<{ success
       headers: { Accept: "application/vnd.github.v3.diff" },
     });
     const diff = await diffRes.text();
-    const truncatedDiff = diff.length > 12000 ? diff.slice(0, 12000) + "\n...[truncated]" : diff;
+    // Increase limit for thorough analysis
+    const truncatedDiff = diff.length > 20000 ? diff.slice(0, 20000) + "\n...[truncated]" : diff;
 
     // Get PR info
     const prRes = await ghFetch(`/repos/${job.owner}/${job.repo}/pulls/${job.pr_number}`);
@@ -72,11 +102,18 @@ async function processJob(supabase: any, groq: any, job: any): Promise<{ success
       return { success: true };
     }
 
-    // Call Groq
+    // Call Groq with larger model for deep analysis
     const response = await groq.chat.completions.create({
-      model: Deno.env.get("GROQ_MODEL") || "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content: `${REVIEW_PROMPT}\n\nPR: ${pr.title}\n\n\`\`\`diff\n${truncatedDiff}\n\`\`\`` }],
+      model: "llama-3.3-70b-versatile",
+      messages: [{ 
+        role: "system", 
+        content: "You are an elite security auditor. Be thorough and paranoid. Find ALL vulnerabilities." 
+      }, { 
+        role: "user", 
+        content: `${REVIEW_PROMPT}\n\n## PR: ${pr.title}\n## Description: ${pr.body || "None"}\n\n## Code Diff:\n\`\`\`diff\n${truncatedDiff}\n\`\`\`` 
+      }],
       temperature: 0.1,
+      max_tokens: 4096,
     });
 
     const content = response.choices[0]?.message?.content || "{}";
@@ -94,23 +131,34 @@ async function processJob(supabase: any, groq: any, job: any): Promise<{ success
     const threatEmoji: Record<string, string> = { CRITICAL: "🚨", HIGH: "🔴", MEDIUM: "🟠", LOW: "🟡", SAFE: "🟢" };
     const threatLevel = review.threat_level || "MEDIUM";
     const securityScore = review.security_score ?? "N/A";
+    const owaspViolations = review.owasp_violations?.join(", ") || "None";
     
-    let body = `## 🛡️ Security Audit Report\n\n`;
-    body += `**Security Score:** ${securityScore}/100 | **Threat Level:** ${threatEmoji[threatLevel] || "⚪"} ${threatLevel}\n\n`;
+    let body = `## 🛡️ Deep Security Audit Report\n\n`;
+    body += `| Metric | Value |\n|--------|-------|\n`;
+    body += `| **Security Score** | ${securityScore}/100 |\n`;
+    body += `| **Threat Level** | ${threatEmoji[threatLevel] || "⚪"} ${threatLevel} |\n`;
+    body += `| **OWASP Violations** | ${owaspViolations} |\n`;
+    body += `| **Auto-Mergeable** | ${review.auto_mergeable ? "✅ Yes" : "❌ No"} |\n\n`;
     body += `${review.summary?.overview || "Review completed"}\n`;
+
+    // Attack vectors
+    if (review.summary?.attack_vectors?.length) {
+      body += `\n### ⚔️ Attack Vectors\n${review.summary.attack_vectors.map((a: string) => `- ${a}`).join("\n")}\n`;
+    }
 
     // Critical findings
     if (review.summary?.critical_findings?.length) {
       body += `\n### 🚨 Critical Findings\n${review.summary.critical_findings.map((f: string) => `- ${f}`).join("\n")}\n`;
     }
 
-    // Vulnerabilities table
+    // Vulnerabilities table with CWE
     if (review.vulnerabilities?.length) {
       body += `\n### 🔍 Vulnerabilities Found\n`;
-      body += `| Severity | Type | File | Description |\n|----------|------|------|-------------|\n`;
-      for (const v of review.vulnerabilities.slice(0, 10)) {
+      body += `| Severity | CWE | Type | Location | Description |\n|----------|-----|------|----------|-------------|\n`;
+      for (const v of review.vulnerabilities.slice(0, 15)) {
         const sev = v.severity?.toUpperCase() || "MEDIUM";
-        body += `| ${threatEmoji[sev] || "⚪"} ${sev} | ${v.type || "Unknown"} | \`${v.path}:${v.line}\` | ${(v.description || "").slice(0, 60)}... |\n`;
+        const cvss = v.cvss_estimate ? ` (${v.cvss_estimate})` : "";
+        body += `| ${threatEmoji[sev] || "⚪"} ${sev}${cvss} | ${v.cwe || "N/A"} | ${v.type || "Unknown"} | \`${v.path}:${v.line}\` | ${(v.description || "").slice(0, 50)}... |\n`;
       }
     }
 
@@ -118,19 +166,33 @@ async function processJob(supabase: any, groq: any, job: any): Promise<{ success
       body += `\n### 📋 Recommendations\n${review.summary.recommendations.map((r: string) => `- ${r}`).join("\n")}`;
     }
 
-    // Prepare line comments
+    // Auto-merge/block decision
+    if (review.requires_security_review) {
+      body += `\n\n---\n⚠️ **This PR requires manual security review before merging.**`;
+    } else if (review.auto_mergeable) {
+      body += `\n\n---\n✅ **This PR passed security checks and is safe to merge.**`;
+    }
+
+    // Prepare line comments with CWE references
     const comments = (review.line_comments || [])
       .filter((c: any) => c.path && c.line > 0)
-      .slice(0, 10) // Limit to 10 comments
+      .slice(0, 15)
       .map((c: any) => ({
         path: c.path,
         line: c.line,
         body: `**[${(c.severity || "info").toUpperCase()}]** ${c.body}${c.suggestion ? `\n\n\`\`\`suggestion\n${c.suggestion}\n\`\`\`` : ""}`,
       }));
 
-    // Post review to GitHub
-    const event = review.approval_recommendation === "approve" ? "APPROVE" 
-      : review.approval_recommendation === "request_changes" ? "REQUEST_CHANGES" : "COMMENT";
+    // Determine review action based on findings
+    let event: string;
+    if (threatLevel === "CRITICAL" || (review.security_score !== undefined && review.security_score < 50)) {
+      event = "REQUEST_CHANGES"; // Block critical PRs
+    } else if (review.auto_mergeable && review.security_score >= 90) {
+      event = "APPROVE"; // Auto-approve safe PRs
+    } else {
+      event = review.approval_recommendation === "approve" ? "APPROVE" 
+        : review.approval_recommendation === "request_changes" ? "REQUEST_CHANGES" : "COMMENT";
+    }
     
     try {
       await ghFetch(`/repos/${job.owner}/${job.repo}/pulls/${job.pr_number}/reviews`, {

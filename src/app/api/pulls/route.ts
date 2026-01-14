@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
-import { listPullRequests } from "@/lib/github";
+import { NextRequest } from "next/server";
+import { pr } from "@/lib/github";
+import { ok, err, handleError } from "@/lib/api";
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,23 +9,20 @@ export async function GET(request: NextRequest) {
     const repo = searchParams.get("repo");
     const state = (searchParams.get("state") || "open") as "open" | "closed" | "all";
 
-    if (!owner || !repo) {
-      return NextResponse.json({ error: "Missing required params: owner, repo" }, { status: 400 });
-    }
+    if (!owner || !repo) return err("Missing required params: owner, repo");
 
-    const data = await listPullRequests(owner, repo, state);
-    const pulls = data.map((pr: any) => ({
-      number: pr.number,
-      title: pr.title,
-      state: pr.state,
-      user: pr.user?.login,
-      created_at: pr.created_at,
-      url: pr.html_url,
+    const data = await pr.list(owner, repo, state);
+    const pulls = data.map((p: any) => ({
+      number: p.number,
+      title: p.title,
+      state: p.state,
+      user: p.user?.login,
+      created_at: p.created_at,
+      url: p.html_url,
     }));
     
-    return NextResponse.json({ pulls });
+    return ok({ pulls });
   } catch (error) {
-    console.error("Pulls error:", error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to fetch PRs" }, { status: 500 });
+    return handleError(error);
   }
 }

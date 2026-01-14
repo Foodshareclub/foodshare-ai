@@ -1,15 +1,10 @@
-import { NextResponse } from "next/server";
 import { getJobStats } from "@/lib/queue";
 import { createClient } from "@/lib/supabase/server";
+import { ok, handleError } from "@/lib/api";
 
 export async function GET() {
   try {
-    const [stats, supabase] = await Promise.all([
-      getJobStats(),
-      createClient(),
-    ]);
-
-    // Get recent failed jobs
+    const [stats, supabase] = await Promise.all([getJobStats(), createClient()]);
     const { data: recentFailed } = await supabase
       .from("review_jobs")
       .select("id, repo_full_name, pr_number, error, attempts, updated_at")
@@ -17,8 +12,8 @@ export async function GET() {
       .order("updated_at", { ascending: false })
       .limit(5);
 
-    return NextResponse.json({ stats, recent_failed: recentFailed || [] });
+    return ok({ stats, recent_failed: recentFailed || [] });
   } catch (error) {
-    return NextResponse.json({ error: "Failed to get job stats" }, { status: 500 });
+    return handleError(error);
   }
 }

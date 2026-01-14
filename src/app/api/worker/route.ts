@@ -32,7 +32,8 @@ export async function POST(request: NextRequest) {
         .single();
 
       const categories = (config?.categories || ["security", "bug", "performance"]).map((c: string) => c as ReviewCategory);
-      const options = job.analysis ? { depth: job.analysis.depth, focus_areas: job.analysis.focus_areas } : undefined;
+      const analysis = job.analysis as { depth?: string; focus_areas?: string[] } | undefined;
+      const options = analysis ? { depth: analysis.depth as "quick" | "standard" | "deep", focus_areas: analysis.focus_areas } : undefined;
 
       const result = await reviewAndPost(job.owner, job.repo, job.pr_number, categories, options);
 

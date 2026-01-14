@@ -42,18 +42,30 @@ serve(async (req) => {
     .eq("status", "processing")
     .lt("started_at", staleThreshold);
 
-  // Claim a job
-  const { data: job, error: claimError } = await supabase
+  // Find oldest pending job
+  const { data: pendingJob } = await supabase
     .from("review_jobs")
-    .update({ status: "processing", started_at: new Date().toISOString() })
+    .select("id")
     .eq("status", "pending")
     .order("created_at", { ascending: true })
     .limit(1)
+    .single();
+
+  if (!pendingJob) {
+    return new Response(JSON.stringify({ message: "No pending jobs" }));
+  }
+
+  // Claim the job
+  const { data: job, error: claimError } = await supabase
+    .from("review_jobs")
+    .update({ status: "processing", started_at: new Date().toISOString() })
+    .eq("id", pendingJob.id)
+    .eq("status", "pending")
     .select()
     .single();
 
   if (claimError || !job) {
-    return new Response(JSON.stringify({ message: "No pending jobs" }));
+    return new Response(JSON.stringify({ message: "Job claimed by another worker" }));
   }
 
   try {

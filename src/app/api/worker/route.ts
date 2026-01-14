@@ -7,7 +7,6 @@ import { ReviewCategory } from "@/lib/review/models";
 
 // Cron or manual trigger to process queued jobs
 export async function POST(request: NextRequest) {
-  // Simple auth for cron
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
@@ -16,9 +15,14 @@ export async function POST(request: NextRequest) {
 
   const processed: string[] = [];
   const errors: string[] = [];
+  const maxJobs = 5;
+  const startTime = Date.now();
+  const timeout = 55000; // 55s to stay under Vercel's 60s limit
+
   let job = await claimJob();
 
-  while (job) {
+  while (job && processed.length + errors.length < maxJobs && Date.now() - startTime < timeout) {
+    const jobKey = `${job.repo_full_name}#${job.pr_number}`;
     try {
       const supabase = await createClient();
       const { data: config } = await supabase
@@ -32,7 +36,6 @@ export async function POST(request: NextRequest) {
 
       const result = await reviewAndPost(job.owner, job.repo, job.pr_number, categories, options);
 
-      // Save to history
       await supabase.from("review_history").insert({
         repo_full_name: job.repo_full_name,
         pr_number: job.pr_number,
@@ -44,18 +47,16 @@ export async function POST(request: NextRequest) {
 
       await completeJob(job.id);
       await notifyReviewCompleted(job.repo_full_name, job.pr_number, result.review.line_comments?.length || 0);
-      processed.push(`${job.repo_full_name}#${job.pr_number}`);
+      processed.push(jobKey);
     } catch (err) {
       const error = err instanceof Error ? err.message : "Unknown error";
       const permanentlyFailed = await failJob(job.id, error, job.attempts + 1, job.max_attempts);
       await notifyReviewFailed(job.repo_full_name, job.pr_number, error, job.attempts + 1, !permanentlyFailed);
-      errors.push(`${job.repo_full_name}#${job.pr_number}: ${error}`);
+      errors.push(`${jobKey}: ${error}`);
     }
 
-    // Get next job (process up to 5 per invocation)
-    if (processed.length + errors.length >= 5) break;
     job = await claimJob();
   }
 
-  return NextResponse.json({ processed, errors, count: processed.length });
+  return NextResponse.json({ processed, errors, count: processed.length, duration_ms: Date.now() - startTime });
 }

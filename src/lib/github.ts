@@ -1,51 +1,56 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 const GITHUB_API = "https://api.github.com";
 
+class GitHubError extends Error {
+  constructor(public status: number, public endpoint: string, message: string) {
+    super(`GitHub API [${status}] ${endpoint}: ${message}`);
+    this.name = "GitHubError";
+  }
+}
+
 function getHeaders() {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) throw new Error("GITHUB_TOKEN not configured");
   return {
-    Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+    Authorization: `Bearer ${token}`,
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   };
 }
 
-export async function getPullRequest(owner: string, repo: string, prNumber: number) {
-  const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}`, {
-    headers: getHeaders(),
-  });
-  if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
+async function ghFetch(endpoint: string, init?: RequestInit): Promise<any> {
+  const res = await fetch(`${GITHUB_API}${endpoint}`, { ...init, headers: { ...getHeaders(), ...init?.headers } });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new GitHubError(res.status, endpoint, body || res.statusText);
+  }
   return res.json();
+}
+
+async function ghFetchText(endpoint: string, accept: string): Promise<string> {
+  const res = await fetch(`${GITHUB_API}${endpoint}`, { headers: { ...getHeaders(), Accept: accept } });
+  if (!res.ok) throw new GitHubError(res.status, endpoint, res.statusText);
+  return res.text();
+}
+
+export async function getPullRequest(owner: string, repo: string, prNumber: number) {
+  return ghFetch(`/repos/${owner}/${repo}/pulls/${prNumber}`);
 }
 
 export async function getPullRequestDiff(owner: string, repo: string, prNumber: number) {
-  const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}`, {
-    headers: { ...getHeaders(), Accept: "application/vnd.github.v3.diff" },
-  });
-  if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
-  return res.text();
+  return ghFetchText(`/repos/${owner}/${repo}/pulls/${prNumber}`, "application/vnd.github.v3.diff");
 }
 
 export async function getCompareCommits(owner: string, repo: string, base: string, head: string) {
-  const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/compare/${base}...${head}`, {
-    headers: { ...getHeaders(), Accept: "application/vnd.github.v3.diff" },
-  });
-  if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
-  return res.text();
+  return ghFetchText(`/repos/${owner}/${repo}/compare/${base}...${head}`, "application/vnd.github.v3.diff");
 }
 
 export async function getPullRequestCommits(owner: string, repo: string, prNumber: number) {
-  const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/commits`, {
-    headers: getHeaders(),
-  });
-  if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
-  return res.json();
+  return ghFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/commits`);
 }
 
 export async function getPullRequestFiles(owner: string, repo: string, prNumber: number) {
-  const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/files`, {
-    headers: getHeaders(),
-  });
-  if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
-  return res.json();
+  return ghFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/files`);
 }
 
 export async function createReview(
@@ -58,14 +63,10 @@ export async function createReview(
 ) {
   const payload: Record<string, unknown> = { body, event };
   if (comments?.length) payload.comments = comments;
-
-  const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/reviews`, {
+  return ghFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/reviews`, {
     method: "POST",
-    headers: getHeaders(),
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
-  return res.json();
 }
 
 export async function createReviewComment(
@@ -75,35 +76,31 @@ export async function createReviewComment(
   body: string,
   inReplyTo: number
 ) {
-  const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/comments`, {
+  return ghFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/comments`, {
     method: "POST",
-    headers: getHeaders(),
     body: JSON.stringify({ body, in_reply_to: inReplyTo }),
   });
-  if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
-  return res.json();
 }
 
 export async function listUserRepos() {
-  const res = await fetch(`${GITHUB_API}/user/repos?per_page=100&sort=updated`, {
-    headers: getHeaders(),
-  });
-  if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
-  return res.json();
+  return ghFetch(`/user/repos?per_page=100&sort=updated`);
 }
 
 export async function listOrgRepos(org: string) {
-  const res = await fetch(`${GITHUB_API}/orgs/${org}/repos?per_page=100&sort=updated`, {
-    headers: getHeaders(),
-  });
-  if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
-  return res.json();
+  return ghFetch(`/orgs/${org}/repos?per_page=100&sort=updated`);
 }
 
 export async function listPullRequests(owner: string, repo: string, state: "open" | "closed" | "all" = "open") {
-  const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls?state=${state}&per_page=50`, {
-    headers: getHeaders(),
-  });
-  if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
-  return res.json();
+  const allPulls: any[] = [];
+  let page = 1;
+  
+  while (true) {
+    const data = await ghFetch(`/repos/${owner}/${repo}/pulls?state=${state}&per_page=100&page=${page}`);
+    if (!Array.isArray(data) || data.length === 0) break;
+    allPulls.push(...data);
+    if (data.length < 100) break;
+    page++;
+  }
+  
+  return allPulls;
 }

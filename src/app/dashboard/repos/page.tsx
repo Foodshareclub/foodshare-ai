@@ -32,13 +32,18 @@ export default function ReposPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const fetchData = async () => {
-    const [ghRes, cfgRes] = await Promise.all([
-      fetch("/api/github/repos").then(r => r.json()),
-      fetch("/api/repos/config").then(r => r.json()),
-    ]);
-    setGithubRepos(ghRes.repos || []);
-    setConfigs(cfgRes.configs || []);
-    setLoading(false);
+    try {
+      const [ghRes, cfgRes] = await Promise.all([
+        fetch("/api/github/repos").then(r => r.json()),
+        fetch("/api/repos/config").then(r => r.json()),
+      ]);
+      setGithubRepos(ghRes.repos || []);
+      setConfigs(cfgRes.configs || []);
+    } catch (e) {
+      console.error("Failed to fetch repos:", e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchData(); }, []);

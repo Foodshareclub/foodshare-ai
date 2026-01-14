@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
       state: pr.state,
       user: pr.user?.login,
       created_at: pr.created_at,
+      url: pr.html_url,
     }));
     
     return NextResponse.json({ pulls });

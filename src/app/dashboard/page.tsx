@@ -28,6 +28,7 @@ interface PR {
   number: number;
   title: string;
   state: string;
+  url: string;
 }
 
 export default function DashboardPage() {
@@ -42,24 +43,31 @@ export default function DashboardPage() {
   const [reviewProgress, setReviewProgress] = useState("");
   const [loadingPrs, setLoadingPrs] = useState(false);
   const [postToGithub, setPostToGithub] = useState(true);
+  const [queueCount, setQueueCount] = useState(0);
 
-  useEffect(() => {
+  const refreshData = useCallback(() => {
     Promise.all([
       fetch("/api/reviews?limit=5").then(r => r.json()),
       fetch("/api/repos/config").then(r => r.json()),
-    ]).then(([reviews, repoData]) => {
+      fetch("/api/health?detailed=true").then(r => r.json()).catch(() => null),
+    ]).then(([reviews, repoData, health]) => {
       setRecentReviews(reviews.reviews || []);
       setRepos(repoData.configs || []);
+      setQueueCount(health?.queue?.pending || 0);
     }).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { refreshData(); }, [refreshData]);
 
   useEffect(() => {
     if (!selectedRepo) { setPrs([]); return; }
     setLoadingPrs(true);
+    setPrs([]);
     const [owner, repo] = selectedRepo.split("/");
-    fetch(`/api/pulls?owner=${owner}&repo=${repo}`)
-      .then(r => r.json())
+    fetch(`/api/pulls?owner=${owner}&repo=${repo}&state=all`)
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
       .then(data => setPrs(data.pulls || []))
+      .catch(() => setPrs([]))
       .finally(() => setLoadingPrs(false));
   }, [selectedRepo]);
 
@@ -92,14 +100,13 @@ export default function DashboardPage() {
       });
       if (res.ok) {
         setReviewProgress("Review complete!");
-        const reviews = await fetch("/api/reviews?limit=5").then(r => r.json());
-        setRecentReviews(reviews.reviews || []);
+        refreshData();
         setSelectedPr("");
       } else {
         const err = await res.json();
         setReviewProgress(`Error: ${err.error}`);
       }
-    } catch (e) {
+    } catch {
       setReviewProgress("Review failed");
     } finally {
       setTimeout(() => {
@@ -170,17 +177,28 @@ export default function DashboardPage() {
             </div>
             <div>
               <label className="text-sm text-zinc-400 block mb-1">Pull Request</label>
-              <select
-                value={selectedPr}
-                onChange={e => setSelectedPr(e.target.value)}
-                disabled={!selectedRepo || loadingPrs}
-                className="w-full px-3 md:px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm disabled:opacity-50"
-              >
-                <option value="">{loadingPrs ? "Loading PRs..." : prs.length === 0 && selectedRepo ? "No open PRs" : "Select PR..."}</option>
+              <div className="flex gap-2">
+                <select
+                  value={selectedPr}
+                  onChange={e => setSelectedPr(e.target.value)}
+                  disabled={!selectedRepo || loadingPrs}
+                  className="flex-1 px-3 md:px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm disabled:opacity-50"
+                >
+                <option value="">{loadingPrs ? "Loading PRs..." : prs.length === 0 && selectedRepo ? "No PRs found" : "Select PR..."}</option>
                 {prs.map(pr => (
-                  <option key={pr.number} value={pr.number}>#{pr.number} - {pr.title.slice(0, 40)}{pr.title.length > 40 ? "..." : ""}</option>
+                  <option key={pr.number} value={pr.number}>#{pr.number} {pr.state === "closed" ? "✓" : "○"} {pr.title.slice(0, 35)}{pr.title.length > 35 ? "..." : ""}</option>
                 ))}
-              </select>
+                </select>
+                {selectedPr && prs.find(p => p.number === parseInt(selectedPr))?.url && (
+                  <a
+                    href={prs.find(p => p.number === parseInt(selectedPr))?.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:text-white hover:border-zinc-600 transition-colors"
+                    title="View on GitHub"
+                  >↗</a>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -210,7 +228,7 @@ export default function DashboardPage() {
       </Card>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
         <Card className="bg-zinc-900 border-zinc-800">
           <CardContent className="pt-4 md:pt-6 text-center">
             <div className="text-2xl md:text-3xl font-bold text-white">{recentReviews.length}</div>
@@ -233,6 +251,12 @@ export default function DashboardPage() {
           <CardContent className="pt-4 md:pt-6 text-center">
             <div className="text-2xl md:text-3xl font-bold text-emerald-400">{repos.filter(r => r.enabled).length}</div>
             <div className="text-xs md:text-sm text-zinc-500">Repos</div>
+          </CardContent>
+        </Card>
+        <Card className={`bg-zinc-900 border-zinc-800 ${queueCount > 0 ? "border-blue-500/50" : ""}`}>
+          <CardContent className="pt-4 md:pt-6 text-center">
+            <div className={`text-2xl md:text-3xl font-bold ${queueCount > 0 ? "text-blue-400" : "text-zinc-500"}`}>{queueCount}</div>
+            <div className="text-xs md:text-sm text-zinc-500">Queued</div>
           </CardContent>
         </Card>
       </div>

@@ -11,15 +11,14 @@ export async function chat(
   prompt: string,
   options?: LLMChatOptions
 ): Promise<string> {
-  const provider = options?.provider || (process.env.LLM_PROVIDER as LLMProvider) || "ollama";
+  const provider = options?.provider || (process.env.LLM_PROVIDER as LLMProvider) || "groq";
 
-  // Try Ollama first, fall back to Groq
   if (provider === "ollama") {
     try {
       return await chatWithOllama(prompt, options);
     } catch (err) {
-      console.log("Ollama failed, falling back to Groq:", err);
       if (process.env.GROQ_API_KEY) {
+        console.log("Ollama failed, falling back to Groq");
         return chatWithGroq(prompt, options);
       }
       throw err;

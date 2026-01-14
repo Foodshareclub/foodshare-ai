@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac } from "crypto";
-import { reviewAndPost } from "@/lib/review";
 import { createClient } from "@/lib/supabase/server";
-import { ReviewCategory } from "@/lib/review/models";
 import { getPullRequestFiles } from "@/lib/github";
 import { analyzePR, PRContext } from "@/lib/analysis";
+import { enqueueReview } from "@/lib/queue";
 
 const WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
 
@@ -15,13 +14,26 @@ function verifySignature(payload: string, signature: string | null): boolean {
   return signature === expected;
 }
 
+async function triggerWorker() {
+  // Fire and forget - trigger worker to process queue
+  const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : process.env.NEXT_PUBLIC_APP_URL;
+  if (baseUrl) {
+    fetch(`${baseUrl}/api/worker`, {
+      method: "POST",
+      headers: { 
+        "Authorization": `Bearer ${process.env.CRON_SECRET || ""}`,
+        "Content-Type": "application/json",
+      },
+    }).catch(() => {}); // Ignore errors
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const payload = await request.text();
     const signature = request.headers.get("x-hub-signature-256");
     const event = request.headers.get("x-github-event");
 
-    // Allow ping without signature for testing
     if (event === "ping") {
       return NextResponse.json({ message: "Pong", status: "ok" });
     }
@@ -31,6 +43,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = JSON.parse(payload);
+
     if (event !== "pull_request") return NextResponse.json({ message: "Ignored event" });
     if (!["opened", "synchronize"].includes(body.action)) {
       return NextResponse.json({ message: `Ignored action: ${body.action}` });
@@ -43,7 +56,7 @@ export async function POST(request: NextRequest) {
     const supabase = await createClient();
     const { data: config } = await supabase
       .from("repo_configs")
-      .select("enabled, auto_review, categories")
+      .select("enabled, auto_review")
       .eq("full_name", fullName)
       .single();
 
@@ -58,7 +71,7 @@ export async function POST(request: NextRequest) {
       files = prFiles.map((f: any) => f.filename);
     } catch { /* ignore */ }
 
-    // Analyze PR risk
+    // Analyze PR
     const ctx: PRContext = {
       files_changed: pr.changed_files || 0,
       additions: pr.additions || 0,
@@ -74,38 +87,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "Skipped", analysis });
     }
 
-    console.log(`PR #${pr.number}: ${analysis.depth} review (${analysis.priority}) - ${analysis.reasons.join(", ")}`);
+    // Enqueue instead of direct processing
+    try {
+      const job = await enqueueReview(repo.owner.login, repo.name, pr.number, analysis);
+      
+      // Trigger worker asynchronously
+      triggerWorker();
 
-    const categories = (config.categories || []).map((c: string) => c as ReviewCategory);
-
-    // Trigger review with analysis-driven options
-    reviewAndPost(repo.owner.login, repo.name, pr.number, categories, {
-      depth: analysis.depth,
-      focus_areas: analysis.focus_areas,
-    })
-      .then(async ({ review, headSha, isIncremental }) => {
-        const supabase = await createClient();
-        await supabase.from("review_history").insert({
-          repo_full_name: fullName,
-          pr_number: pr.number,
-          status: "completed",
-          result: { ...review, _analysis: analysis },
-          head_sha: headSha,
-          is_incremental: isIncremental,
-        });
-      })
-      .catch(async (err) => {
-        console.error("Review failed:", err);
-        const supabase = await createClient();
-        await supabase.from("review_history").insert({
-          repo_full_name: fullName,
-          pr_number: pr.number,
-          status: "failed",
-          result: { error: err.message, _analysis: analysis },
-        });
+      return NextResponse.json({
+        message: "Review queued",
+        job_id: job.id,
+        pr_number: pr.number,
+        analysis,
       });
-
-    return NextResponse.json({ message: "Review triggered", pr_number: pr.number, analysis });
+    } catch (err) {
+      if (err instanceof Error && err.message === "Review already queued") {
+        return NextResponse.json({ message: "Already queued", pr_number: pr.number });
+      }
+      throw err;
+    }
   } catch (error) {
     console.error("Webhook error:", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed" }, { status: 500 });

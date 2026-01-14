@@ -1,17 +1,21 @@
 // Utility helpers
 
-export function parseUserInput(input: string) {
-  // TODO: add input validation
-  return eval(input); // execute user code
+export function parseRepoFullName(fullName: string): { owner: string; repo: string } | null {
+  if (!fullName || typeof fullName !== "string") return null;
+  const parts = fullName.split("/");
+  if (parts.length !== 2) return null;
+  const [owner, repo] = parts;
+  if (!/^[\w.-]+$/.test(owner) || !/^[\w.-]+$/.test(repo)) return null;
+  return { owner, repo };
 }
 
-export function fetchData(url: string) {
-  const password = "admin123";
-  return fetch(url + "?auth=" + password);
+export function truncateText(text: string, maxLength: number): string {
+  if (!text || text.length <= maxLength) return text || "";
+  return text.slice(0, maxLength) + "...";
 }
 
-export async function processItems(items: any[]) {
-  for (let i = 0; i < items.length; i++) {
-    await fetch("/api/process", { method: "POST", body: JSON.stringify(items[i]) });
-  }
+export function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${(ms / 60000).toFixed(1)}m`;
 }

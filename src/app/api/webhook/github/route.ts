@@ -15,16 +15,17 @@ function verifySignature(payload: string, signature: string | null): boolean {
 }
 
 async function triggerWorker() {
-  // Fire and forget - trigger worker to process queue
-  const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : process.env.NEXT_PUBLIC_APP_URL;
-  if (baseUrl) {
-    fetch(`${baseUrl}/api/worker`, {
+  // Trigger Supabase edge function to process queue
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const cronSecret = process.env.CRON_SECRET;
+  if (supabaseUrl && cronSecret) {
+    fetch(`${supabaseUrl}/functions/v1/process-queue`, {
       method: "POST",
       headers: { 
-        "Authorization": `Bearer ${process.env.CRON_SECRET || ""}`,
+        "Authorization": `Bearer ${cronSecret}`,
         "Content-Type": "application/json",
       },
-    }).catch(() => {}); // Ignore errors
+    }).catch(() => {});
   }
 }
 

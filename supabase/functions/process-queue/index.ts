@@ -8,82 +8,41 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") || "";
 
-const REVIEW_PROMPT = `You are an elite security auditor and code reviewer. Perform a DEEP SECURITY AUDIT of this PR.
+const REVIEW_PROMPT = `You are a security auditor. Analyze this code diff for vulnerabilities.
 
-## CRITICAL: Scan for these threats
+SCAN FOR:
+- Injection (SQL, XSS, command)
+- Hardcoded secrets/credentials
+- Auth/authz flaws
+- Data leaks
+- Backdoors (eval, obfuscated code)
+- SSRF, path traversal
 
-### 1. INJECTION ATTACKS
-- SQL injection (raw queries, string concatenation)
-- Command injection (exec, spawn, system calls)
-- XSS (innerHTML, dangerouslySetInnerHTML, unsanitized output)
-- Template injection
-- LDAP/XML/XPath injection
-
-### 2. AUTHENTICATION & AUTHORIZATION
-- Hardcoded credentials, API keys, tokens, passwords
-- Weak authentication logic
-- Missing authorization checks
-- JWT vulnerabilities (none algorithm, weak secrets)
-- Session fixation/hijacking
-
-### 3. DATA EXPOSURE & LEAKS
-- Sensitive data in logs (passwords, tokens, PII)
-- Exposed secrets in error messages
-- Insecure data transmission
-- Missing encryption for sensitive data
-- .env files, config leaks
-
-### 4. BACKDOORS & MALICIOUS CODE
-- Suspicious eval(), Function(), new Function()
-- Obfuscated code
-- Hidden endpoints or admin routes
-- Unexpected network calls
-- Crypto mining, data exfiltration patterns
-
-### 5. DEPENDENCY & SUPPLY CHAIN
-- Known vulnerable packages
-- Typosquatting packages
-- Suspicious postinstall scripts
-
-### 6. LOGIC FLAWS
-- Race conditions
-- TOCTOU (time-of-check to time-of-use)
-- Integer overflow/underflow
-- Null pointer dereference
-- Improper error handling exposing internals
-
-### 7. INFRASTRUCTURE
-- SSRF vulnerabilities
-- Path traversal (../)
-- Insecure deserialization
-- Missing rate limiting
-- CORS misconfigurations
-
-## Output JSON:
+RESPOND WITH THIS EXACT JSON FORMAT:
 {
-  "security_score": 0-100,
-  "threat_level": "CRITICAL|HIGH|MEDIUM|LOW|SAFE",
-  "summary": { 
-    "overview": "security assessment summary",
-    "critical_findings": ["list of critical issues"],
-    "risk_assessment": "Critical|High|Medium|Low",
-    "recommendations": ["prioritized fixes"]
+  "security_score": <0-100>,
+  "threat_level": "<CRITICAL|HIGH|MEDIUM|LOW|SAFE>",
+  "summary": {
+    "overview": "<1-2 sentences>",
+    "critical_findings": ["<critical issues>"],
+    "risk_assessment": "<Critical|High|Medium|Low>",
+    "recommendations": ["<fixes>"]
   },
-  "vulnerabilities": [{
-    "type": "SQL_INJECTION|XSS|HARDCODED_SECRET|BACKDOOR|etc",
-    "severity": "critical|high|medium|low",
-    "path": "file.ts",
-    "line": 42,
-    "code": "vulnerable code snippet",
-    "description": "detailed explanation",
-    "fix": "how to fix it",
-    "cwe": "CWE-XXX if applicable"
-  }],
-  "line_comments": [{ "path": "file.ts", "line": 10, "body": "issue", "severity": "critical|high|medium|low", "suggestion": "fix" }],
-  "approval_recommendation": "approve|request_changes|comment"
+  "vulnerabilities": [
+    {
+      "type": "<INJECTION|XSS|HARDCODED_SECRET|BACKDOOR|AUTH_FLAW|DATA_LEAK|SSRF|PATH_TRAVERSAL>",
+      "severity": "<critical|high|medium|low>",
+      "path": "<file.ts>",
+      "line": <number>,
+      "description": "<what's wrong>",
+      "fix": "<how to fix>"
+    }
+  ],
+  "line_comments": [{"path": "<file>", "line": <n>, "body": "<issue>", "severity": "<critical|high|medium|low>"}],
+  "approval_recommendation": "<approve|request_changes|comment>"
 }
 
-BE PARANOID. Assume malicious intent. Flag anything suspicious. Return ONLY valid JSON.`;
+Return ONLY valid JSON. No markdown.`;
 
 async function ghFetch(endpoint: string, options?: RequestInit) {
   const res = await fetch(`https://api.github.com${endpoint}`, {

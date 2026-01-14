@@ -8,13 +8,82 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") || "";
 
-const REVIEW_PROMPT = `You are an expert code reviewer. Review this PR diff and return JSON:
+const REVIEW_PROMPT = `You are an elite security auditor and code reviewer. Perform a DEEP SECURITY AUDIT of this PR.
+
+## CRITICAL: Scan for these threats
+
+### 1. INJECTION ATTACKS
+- SQL injection (raw queries, string concatenation)
+- Command injection (exec, spawn, system calls)
+- XSS (innerHTML, dangerouslySetInnerHTML, unsanitized output)
+- Template injection
+- LDAP/XML/XPath injection
+
+### 2. AUTHENTICATION & AUTHORIZATION
+- Hardcoded credentials, API keys, tokens, passwords
+- Weak authentication logic
+- Missing authorization checks
+- JWT vulnerabilities (none algorithm, weak secrets)
+- Session fixation/hijacking
+
+### 3. DATA EXPOSURE & LEAKS
+- Sensitive data in logs (passwords, tokens, PII)
+- Exposed secrets in error messages
+- Insecure data transmission
+- Missing encryption for sensitive data
+- .env files, config leaks
+
+### 4. BACKDOORS & MALICIOUS CODE
+- Suspicious eval(), Function(), new Function()
+- Obfuscated code
+- Hidden endpoints or admin routes
+- Unexpected network calls
+- Crypto mining, data exfiltration patterns
+
+### 5. DEPENDENCY & SUPPLY CHAIN
+- Known vulnerable packages
+- Typosquatting packages
+- Suspicious postinstall scripts
+
+### 6. LOGIC FLAWS
+- Race conditions
+- TOCTOU (time-of-check to time-of-use)
+- Integer overflow/underflow
+- Null pointer dereference
+- Improper error handling exposing internals
+
+### 7. INFRASTRUCTURE
+- SSRF vulnerabilities
+- Path traversal (../)
+- Insecure deserialization
+- Missing rate limiting
+- CORS misconfigurations
+
+## Output JSON:
 {
-  "summary": { "overview": "1-2 sentence summary", "risk_assessment": "Low|Medium|High", "recommendations": ["action items"] },
-  "line_comments": [{ "path": "file.ts", "line": 10, "body": "issue description", "severity": "critical|high|medium|low", "suggestion": "optional fix" }],
+  "security_score": 0-100,
+  "threat_level": "CRITICAL|HIGH|MEDIUM|LOW|SAFE",
+  "summary": { 
+    "overview": "security assessment summary",
+    "critical_findings": ["list of critical issues"],
+    "risk_assessment": "Critical|High|Medium|Low",
+    "recommendations": ["prioritized fixes"]
+  },
+  "vulnerabilities": [{
+    "type": "SQL_INJECTION|XSS|HARDCODED_SECRET|BACKDOOR|etc",
+    "severity": "critical|high|medium|low",
+    "path": "file.ts",
+    "line": 42,
+    "code": "vulnerable code snippet",
+    "description": "detailed explanation",
+    "fix": "how to fix it",
+    "cwe": "CWE-XXX if applicable"
+  }],
+  "line_comments": [{ "path": "file.ts", "line": 10, "body": "issue", "severity": "critical|high|medium|low", "suggestion": "fix" }],
   "approval_recommendation": "approve|request_changes|comment"
 }
-Focus on: security vulnerabilities, bugs, performance issues. Be concise. Return ONLY valid JSON.`;
+
+BE PARANOID. Assume malicious intent. Flag anything suspicious. Return ONLY valid JSON.`;
 
 async function ghFetch(endpoint: string, options?: RequestInit) {
   const res = await fetch(`https://api.github.com${endpoint}`, {
@@ -63,11 +132,31 @@ async function processJob(supabase: any, groq: any, job: any): Promise<{ success
     }
 
     // Build review body
-    const riskEmoji = { Low: "🟢", Medium: "🟡", High: "🔴" }[review.summary?.risk_assessment] || "⚪";
-    let body = `## 🤖 AI Code Review\n\n${review.summary?.overview || "Review completed"}\n\n**Risk:** ${riskEmoji} ${review.summary?.risk_assessment || "Unknown"}`;
+    const threatEmoji: Record<string, string> = { CRITICAL: "🚨", HIGH: "🔴", MEDIUM: "🟠", LOW: "🟡", SAFE: "🟢" };
+    const threatLevel = review.threat_level || "MEDIUM";
+    const securityScore = review.security_score ?? "N/A";
     
+    let body = `## 🛡️ Security Audit Report\n\n`;
+    body += `**Security Score:** ${securityScore}/100 | **Threat Level:** ${threatEmoji[threatLevel] || "⚪"} ${threatLevel}\n\n`;
+    body += `${review.summary?.overview || "Review completed"}\n`;
+
+    // Critical findings
+    if (review.summary?.critical_findings?.length) {
+      body += `\n### 🚨 Critical Findings\n${review.summary.critical_findings.map((f: string) => `- ${f}`).join("\n")}\n`;
+    }
+
+    // Vulnerabilities table
+    if (review.vulnerabilities?.length) {
+      body += `\n### 🔍 Vulnerabilities Found\n`;
+      body += `| Severity | Type | File | Description |\n|----------|------|------|-------------|\n`;
+      for (const v of review.vulnerabilities.slice(0, 10)) {
+        const sev = v.severity?.toUpperCase() || "MEDIUM";
+        body += `| ${threatEmoji[sev] || "⚪"} ${sev} | ${v.type || "Unknown"} | \`${v.path}:${v.line}\` | ${(v.description || "").slice(0, 60)}... |\n`;
+      }
+    }
+
     if (review.summary?.recommendations?.length) {
-      body += `\n\n### Recommendations\n${review.summary.recommendations.map((r: string) => `- ${r}`).join("\n")}`;
+      body += `\n### 📋 Recommendations\n${review.summary.recommendations.map((r: string) => `- ${r}`).join("\n")}`;
     }
 
     // Prepare line comments

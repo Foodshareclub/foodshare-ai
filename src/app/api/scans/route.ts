@@ -24,3 +24,30 @@ export async function GET(request: NextRequest) {
     return handleError(error);
   }
 }
+
+export async function POST(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const repo = searchParams.get("repo");
+    
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const cronSecret = process.env.CRON_SECRET;
+    
+    if (!supabaseUrl || !cronSecret) {
+      throw new Error("Missing configuration");
+    }
+    
+    const url = repo 
+      ? `${supabaseUrl}/functions/v1/scan-repos?repo=${repo}`
+      : `${supabaseUrl}/functions/v1/scan-repos`;
+      
+    await fetch(url, { 
+      method: "POST",
+      headers: { Authorization: `Bearer ${cronSecret}` } 
+    });
+    
+    return ok({ message: "Scan triggered" });
+  } catch (error) {
+    return handleError(error);
+  }
+}

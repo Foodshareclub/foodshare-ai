@@ -26,7 +26,7 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname
 
   // Public paths
-  if (path === '/login' || path.startsWith('/api/') || path.startsWith('/auth/')) {
+  if (path === '/login' || path.startsWith('/api/') || path.startsWith('/auth/') || path === '/monitoring' || path.startsWith('/monitoring')) {
     return response
   }
 

@@ -1,0 +1,296 @@
+openapi: 3.0.3
+info:
+  title: FoodShare AI API
+  description: AI-powered code review platform API
+  version: 1.0.0
+  contact:
+    email: support@foodshare.ai
+
+servers:
+  - url: https://ai.foodshare.club/api
+    description: Production
+  - url: http://localhost:3000/api
+    description: Development
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+    ReviewRequest:
+      type: object
+      required: [owner, repo, prNumber]
+      properties:
+        owner:
+          type: string
+          example: Foodshareclub
+        repo:
+          type: string
+          example: foodshare-ai
+        prNumber:
+          type: integer
+          example: 123
+        depth:
+          type: string
+          enum: [quick, standard, deep]
+          default: standard
+    ReviewResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        summary:
+          type: string
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, unhealthy]
+    DetailedHealthResponse:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        status:
+          type: string
+        checks:
+          type: object
+          properties:
+            database:
+              type: string
+            github:
+              type: string
+    StatsResponse:
+      type: object
+      properties:
+        reviews:
+          type: integer
+        repos:
+          type: integer
+        scans:
+          type: object
+        queue:
+          type: object
+
+paths:
+  /health:
+    get:
+      summary: Basic health check
+      tags: [Health]
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /health/detailed:
+    get:
+      summary: Detailed health check
+      tags: [Health]
+      responses:
+        '200':
+          description: Detailed health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetailedHealthResponse'
+
+  /stats:
+    get:
+      summary: Get platform statistics
+      tags: [Stats]
+      responses:
+        '200':
+          description: Platform statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResponse'
+
+  /review:
+    post:
+      summary: Create a new code review
+      tags: [Reviews]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewRequest'
+      responses:
+        '200':
+          description: Review queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /reviews:
+    get:
+      summary: List reviews
+      tags: [Reviews]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, completed, failed]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of reviews
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReviewResponse'
+
+  /reviews/{id}:
+    get:
+      summary: Get review by ID
+      tags: [Reviews]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Review details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewResponse'
+        '404':
+          description: Review not found
+
+  /repos:
+    get:
+      summary: List connected repositories
+      tags: [Repositories]
+      responses:
+        '200':
+          description: List of repositories
+
+  /jobs:
+    get:
+      summary: Get job queue status
+      tags: [Jobs]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, processing, completed, failed]
+      responses:
+        '200':
+          description: Job queue status
+
+  /metrics:
+    get:
+      summary: Get application metrics
+      tags: [Monitoring]
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, prometheus]
+      responses:
+        '200':
+          description: Application metrics
+
+  /audit:
+    get:
+      summary: Get audit logs
+      tags: [Audit]
+      parameters:
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Audit log entries
+
+  /webhook/github:
+    post:
+      summary: GitHub webhook endpoint
+      tags: [Webhooks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Webhook processed
+        '401':
+          description: Invalid signature
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Reviews
+    description: Code review operations
+  - name: Repositories
+    description: Repository management
+  - name: Jobs
+    description: Job queue management
+  - name: Monitoring
+    description: Metrics and monitoring
+  - name: Audit
+    description: Audit logging
+  - name: Webhooks
+    description: Webhook handlers

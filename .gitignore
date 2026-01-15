@@ -35,3 +35,6 @@ _archive/
 .vercel
 .env.prod
 llm/
+
+# Sentry Config File
+.env.sentry-build-plugin

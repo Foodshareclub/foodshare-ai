@@ -99,10 +99,8 @@ export default function ScansPage() {
   const triggerScan = async (repo?: string) => {
     setScanning(repo || "all");
     try {
-      const url = repo 
-        ? `https://mojsubkqjdruhpxbzgme.supabase.co/functions/v1/scan-repos?repo=${repo}`
-        : "https://mojsubkqjdruhpxbzgme.supabase.co/functions/v1/scan-repos";
-      await fetch(url, { headers: { Authorization: "Bearer foodshare-cron-2026" } });
+      const url = repo ? `/api/scans?repo=${repo}` : "/api/scans";
+      await fetch(url, { method: "POST" });
       fetchScans();
     } finally {
       setScanning(null);

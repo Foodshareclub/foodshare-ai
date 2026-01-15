@@ -1,3 +1,6 @@
+import { githubCircuitBreaker } from "./circuit-breaker";
+import { metrics } from "./metrics";
+
 const GITHUB_API = "https://api.github.com";
 
 class GitHubError extends Error {
@@ -20,9 +23,14 @@ const headers = () => ({
 });
 
 async function gh<T = unknown>(endpoint: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${GITHUB_API}${endpoint}`, { ...init, headers: { ...headers(), ...init?.headers } });
-  if (!res.ok) throw new GitHubError(res.status, endpoint, await res.text().catch(() => res.statusText));
-  return res.json();
+  const start = Date.now();
+  return githubCircuitBreaker.execute(async () => {
+    const res = await fetch(`${GITHUB_API}${endpoint}`, { ...init, headers: { ...headers(), ...init?.headers } });
+    metrics.timing("github_api_latency", start, { endpoint: endpoint.split("/")[1] || "unknown" });
+    metrics.increment("github_api_requests", 1, { status: String(res.status) });
+    if (!res.ok) throw new GitHubError(res.status, endpoint, await res.text().catch(() => res.statusText));
+    return res.json();
+  });
 }
 
 async function ghText(endpoint: string, accept: string): Promise<string> {

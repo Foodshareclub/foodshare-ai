@@ -29,7 +29,7 @@ export function apiHandler(
       if (options.rateLimit) {
         const limiter = rateLimit(options.rateLimit);
         const identifier = getClientIdentifier(req);
-        const result = limiter(identifier);
+        const result = await limiter(identifier);
 
         if (!result.allowed) {
           metrics.increment('api.rate_limited', 1);

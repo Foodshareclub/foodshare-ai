@@ -1,5 +1,5 @@
--- This migration requires pg_cron to be enabled first via Dashboard
--- Go to: Database → Extensions → Enable pg_cron
+-- Enable pg_cron extension if not already enabled
+CREATE EXTENSION IF NOT EXISTS pg_cron;
 
 -- Schedule poll-repos every 5 minutes
 SELECT cron.schedule(

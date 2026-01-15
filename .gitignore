@@ -34,3 +34,4 @@ __pycache__/
 _archive/
 .vercel
 .env.prod
+llm/models/

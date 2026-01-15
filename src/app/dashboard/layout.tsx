@@ -19,8 +19,7 @@ interface ChatMessage {
   content: string;
 }
 
-function SidebarChat() {
-  const [open, setOpen] = useState(false);
+function ChatPanel({ onClose }: { onClose: () => void }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -52,51 +51,44 @@ function SidebarChat() {
     }
   };
 
-  if (!open) {
-    return (
-      <button
-        onClick={() => setOpen(true)}
-        className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 w-full"
-      >
-        <span>💬</span>
-        AI Chat
-      </button>
-    );
-  }
-
   return (
-    <div className="flex flex-col h-64 border border-zinc-700 rounded-lg bg-zinc-800/50 overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-700 bg-zinc-800">
-        <span className="text-sm font-medium text-white">💬 AI Chat</span>
-        <button onClick={() => setOpen(false)} className="text-zinc-400 hover:text-white text-xs">✕</button>
+    <aside className="w-80 flex-shrink-0 border-l border-zinc-800 bg-zinc-900 flex flex-col h-full">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+        <span className="font-medium text-white flex items-center gap-2">💬 AI Assistant</span>
+        <button onClick={onClose} className="text-zinc-400 hover:text-white">✕</button>
       </div>
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
-          <p className="text-xs text-zinc-500 text-center py-4">Ask about code reviews, security, or your repos...</p>
+          <div className="text-sm text-zinc-500 text-center py-8">
+            <p>Ask me about:</p>
+            <p className="mt-2 text-xs">• Code reviews & best practices</p>
+            <p className="text-xs">• Security vulnerabilities</p>
+            <p className="text-xs">• Your repositories</p>
+          </div>
         )}
         {messages.map((msg, i) => (
-          <div key={i} className={cn("text-xs p-2 rounded", msg.role === "user" ? "bg-emerald-500/20 text-emerald-300 ml-4" : "bg-zinc-700 text-zinc-300 mr-4")}>
+          <div key={i} className={cn("text-sm p-3 rounded-lg", msg.role === "user" ? "bg-emerald-500/20 text-emerald-300 ml-8" : "bg-zinc-800 text-zinc-300 mr-8")}>
             {msg.content}
           </div>
         ))}
-        {loading && <div className="text-xs text-zinc-500 animate-pulse">Thinking...</div>}
+        {loading && <div className="text-sm text-zinc-500 animate-pulse p-3">Thinking...</div>}
         <div ref={messagesEndRef} />
       </div>
-      <div className="p-2 border-t border-zinc-700">
-        <div className="flex gap-1">
+      <div className="p-4 border-t border-zinc-800">
+        <div className="flex gap-2">
           <input
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === "Enter" && sendMessage()}
             placeholder="Ask AI..."
-            className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500"
+            className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500"
           />
-          <button onClick={sendMessage} disabled={loading} className="px-2 py-1 bg-emerald-500 text-white rounded text-xs hover:bg-emerald-600 disabled:opacity-50">
-            →
+          <button onClick={sendMessage} disabled={loading} className="px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm hover:bg-emerald-600 disabled:opacity-50">
+            Send
           </button>
         </div>
       </div>
-    </div>
+    </aside>
   );
 }
 
@@ -104,6 +96,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const [stats, setStats] = useState({ reviews: 0, repos: 0 });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/stats").then(r => r.json()).then(setStats).catch(() => {});
@@ -121,9 +114,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center text-white font-bold text-sm">AI</div>
           <span className="font-semibold text-white">FoodShare AI</span>
         </Link>
-        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-white p-2">
-          {mobileMenuOpen ? "✕" : "☰"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setChatOpen(!chatOpen)} className="text-white p-2">💬</button>
+          <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-white p-2">
+            {mobileMenuOpen ? "✕" : "☰"}
+          </button>
+        </div>
       </div>
 
       {/* Mobile Menu Overlay */}
@@ -131,7 +127,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="md:hidden fixed inset-0 z-40 bg-black/50" onClick={() => setMobileMenuOpen(false)} />
       )}
 
-      {/* Sidebar - fixed, no scroll */}
+      {/* Left Sidebar */}
       <aside className={cn(
         "fixed md:relative inset-y-0 left-0 z-40 w-64 flex-shrink-0 border-r border-zinc-800 bg-zinc-900 flex flex-col transform transition-transform md:transform-none",
         mobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
@@ -162,9 +158,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {item.label}
             </Link>
           ))}
-          <div className="pt-2">
-            <SidebarChat />
-          </div>
+          <button
+            onClick={() => setChatOpen(!chatOpen)}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors w-full",
+              chatOpen ? "bg-emerald-500/10 text-emerald-400 font-medium" : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+            )}
+          >
+            <span>💬</span>
+            AI Chat
+          </button>
         </nav>
 
         <div className="p-4 border-t border-zinc-800">
@@ -181,10 +184,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
 
-      {/* Main content - scrollable */}
+      {/* Main content */}
       <main className="flex-1 overflow-y-auto pt-16 md:pt-0">
         <div className="p-4 md:p-8 max-w-6xl">{children}</div>
       </main>
+
+      {/* Right Chat Panel */}
+      {chatOpen && <ChatPanel onClose={() => setChatOpen(false)} />}
     </div>
   );
 }

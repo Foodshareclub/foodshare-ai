@@ -11,6 +11,7 @@ const navItems = [
   { href: "/dashboard/scans", label: "Security Scans", icon: "🛡️" },
   { href: "/dashboard/repos", label: "Repos", icon: "📁" },
   { href: "/dashboard/analytics", label: "Analytics", icon: "📈" },
+  { href: "/dashboard/chat", label: "AI Chat", icon: "💬" },
   { href: "/dashboard/settings", label: "Settings", icon: "⚙️" },
 ];
 

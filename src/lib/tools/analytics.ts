@@ -1,12 +1,14 @@
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { Tool, ToolResult, daysSchema } from "./types";
+import { Tool, ToolResult, daysSchema, toolError } from "./types";
 
 export const analyticsTools: Tool[] = [
   {
     name: "stats",
     description: "Platform statistics and health overview",
     category: "analytics",
+    permission: "read",
+    cacheTtl: 30,
     params: [],
     schema: z.object({}),
     execute: async (_, ctx): Promise<ToolResult> => {
@@ -29,12 +31,13 @@ export const analyticsTools: Tool[] = [
       const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
       
       const enabledRepos = repos.data?.filter(r => r.enabled).length || 0;
+      const healthStatus = failed > 10 ? "⚠️ Degraded" : processing > 20 ? "⚡ High Load" : "✓ Healthy";
       
       const output = `**Platform Statistics**
 
 📊 **Overview**
-• Total Reviews: ${reviews.count || 0}
-• Total Scans: ${scans.count || 0}
+• Total Reviews: ${reviews.count?.toLocaleString() || 0}
+• Total Scans: ${scans.count?.toLocaleString() || 0}
 • Repositories: ${repos.count || 0} (${enabledRepos} active)
 • Avg Score: ${avg}/100
 
@@ -43,7 +46,7 @@ export const analyticsTools: Tool[] = [
 • Processing: ${processing}
 • Failed: ${failed}
 
-🏥 **Health:** ${failed > 10 ? '⚠️ Degraded' : '✓ Healthy'}`;
+🏥 **Health:** ${healthStatus}`;
       
       return { success: true, data: output, metadata: { duration: Date.now() - ctx.startTime } };
     }
@@ -52,6 +55,8 @@ export const analyticsTools: Tool[] = [
     name: "trends",
     description: "Review score trends over time",
     category: "analytics",
+    permission: "read",
+    cacheTtl: 120,
     params: [
       { name: "repo", required: false, description: "Filter by repository", type: "string" },
       { name: "days", required: false, description: "Days to analyze (1-365)", type: "number", default: "7" },
@@ -74,11 +79,13 @@ export const analyticsTools: Tool[] = [
       if (params.repo) query = query.ilike("repo_full_name", `%${params.repo}%`);
       
       const { data, error } = await query;
-      if (error) return { success: false, error: error.message };
+      if (error) return toolError("INTERNAL_ERROR", error.message);
       if (!data?.length) return { success: true, data: `No reviews in the last ${days} days.` };
       
       const scores = data.map(r => r.score).filter((s): s is number => s != null);
       const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+      const min = scores.length ? Math.min(...scores) : 0;
+      const max = scores.length ? Math.max(...scores) : 0;
       
       const byRepo: Record<string, number[]> = {};
       data.forEach(r => {
@@ -97,7 +104,7 @@ export const analyticsTools: Tool[] = [
       
       const output = `**Trends: Last ${days} Days**
 • Reviews: ${data.length}
-• Average Score: ${avg}/100
+• Average: ${avg}/100 (min: ${min}, max: ${max})
 
 **By Repository:**
 ${repoStats.slice(0, 10).map(r => `• ${r.repo}: ${r.count} reviews, avg ${r.avg}/100`).join("\n")}`;
@@ -109,6 +116,8 @@ ${repoStats.slice(0, 10).map(r => `• ${r.repo}: ${r.count} reviews, avg ${r.av
     name: "queue",
     description: "Job queue status and recent jobs",
     category: "queue",
+    permission: "read",
+    cacheTtl: 10,
     params: [],
     schema: z.object({}),
     execute: async (_, ctx): Promise<ToolResult> => {
@@ -117,23 +126,22 @@ ${repoStats.slice(0, 10).map(r => `• ${r.repo}: ${r.count} reviews, avg ${r.av
         .from("review_queue")
         .select("*")
         .order("created_at", { ascending: false })
-        .limit(15);
+        .limit(20);
       
-      if (error) return { success: false, error: error.message };
+      if (error) return toolError("INTERNAL_ERROR", error.message);
       if (!data?.length) return { success: true, data: "Queue is empty." };
       
-      const pending = data.filter(j => j.status === "pending").length;
-      const processing = data.filter(j => j.status === "processing").length;
-      const failed = data.filter(j => j.status === "failed").length;
-      const completed = data.filter(j => j.status === "completed").length;
+      const counts = { pending: 0, processing: 0, failed: 0, completed: 0 };
+      data.forEach(j => { counts[j.status as keyof typeof counts]++; });
       
       const output = `**Queue Status**
-• Pending: ${pending} | Processing: ${processing} | Failed: ${failed} | Completed: ${completed}
+• Pending: ${counts.pending} | Processing: ${counts.processing} | Failed: ${counts.failed} | Completed: ${counts.completed}
 
 **Recent Jobs:**
-${data.slice(0, 10).map(j => {
+${data.slice(0, 12).map(j => {
   const icon = j.status === "completed" ? "✓" : j.status === "failed" ? "✗" : j.status === "processing" ? "⟳" : "○";
-  return `${icon} ${j.repo_full_name} PR#${j.pr_number} (${j.status})${j.error ? ` - ${j.error.slice(0, 40)}...` : ''}`;
+  const age = Math.floor((Date.now() - new Date(j.created_at).getTime()) / 60000);
+  return `${icon} ${j.repo_full_name} PR#${j.pr_number} (${j.status}, ${age}m ago)${j.error ? `\n  └ ${j.error.slice(0, 50)}...` : ''}`;
 }).join("\n")}`;
       
       return { success: true, data: output, metadata: { duration: Date.now() - ctx.startTime, recordsAffected: data.length } };
@@ -143,6 +151,7 @@ ${data.slice(0, 10).map(j => {
     name: "retry",
     description: "Retry failed jobs",
     category: "queue",
+    permission: "write",
     params: [
       { name: "repo", required: false, description: "Filter by repository", type: "string" },
     ],
@@ -152,13 +161,13 @@ ${data.slice(0, 10).map(j => {
       
       let query = supabase
         .from("review_queue")
-        .update({ status: "pending", attempts: 0, error: null })
+        .update({ status: "pending", attempts: 0, error: null, updated_at: new Date().toISOString() })
         .eq("status", "failed");
       
       if (params.repo) query = query.ilike("repo_full_name", `%${params.repo}%`);
       
       const { data, error } = await query.select("id");
-      if (error) return { success: false, error: error.message };
+      if (error) return toolError("INTERNAL_ERROR", error.message);
       
       const count = data?.length || 0;
       return {
@@ -166,6 +175,38 @@ ${data.slice(0, 10).map(j => {
         data: count > 0 
           ? `✓ Reset ${count} failed job${count > 1 ? 's' : ''} to pending`
           : "No failed jobs to retry",
+        metadata: { duration: Date.now() - ctx.startTime, recordsAffected: count }
+      };
+    }
+  },
+  {
+    name: "clear-queue",
+    description: "Clear completed/failed jobs from queue",
+    category: "queue",
+    permission: "admin",
+    params: [
+      { name: "status", required: true, description: "Status to clear", type: "string", enum: ["completed", "failed"] },
+      { name: "confirm", required: true, description: "Type 'yes' to confirm", type: "string" },
+    ],
+    schema: z.object({
+      status: z.enum(["completed", "failed"]),
+      confirm: z.literal("yes"),
+    }),
+    execute: async (params, ctx): Promise<ToolResult> => {
+      const supabase = await createClient();
+      
+      const { data, error } = await supabase
+        .from("review_queue")
+        .delete()
+        .eq("status", params.status)
+        .select("id");
+      
+      if (error) return toolError("INTERNAL_ERROR", error.message);
+      
+      const count = data?.length || 0;
+      return {
+        success: true,
+        data: `✓ Cleared ${count} ${params.status} job${count !== 1 ? 's' : ''} from queue`,
         metadata: { duration: Date.now() - ctx.startTime, recordsAffected: count }
       };
     }

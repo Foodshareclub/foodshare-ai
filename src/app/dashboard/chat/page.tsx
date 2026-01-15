@@ -8,6 +8,7 @@ interface ToolDef {
   description: string;
   category: string;
   params: string[];
+  permission: "read" | "write" | "admin";
   examples?: string[];
 }
 
@@ -18,6 +19,7 @@ interface ChatMessage {
   timestamp: Date;
   status?: "success" | "error";
   duration?: number;
+  cached?: boolean;
 }
 
 const CATEGORIES: Record<string, { icon: string; color: string }> = {
@@ -123,7 +125,7 @@ export default function ChatPage() {
     inputRef.current?.focus();
   };
 
-  const executeCommand = async (command: string, args: Record<string, string>): Promise<{ data?: string; error?: string; duration?: number }> => {
+  const executeCommand = async (command: string, args: Record<string, string>): Promise<{ data?: string; error?: string; duration?: number; cached?: boolean }> => {
     const start = Date.now();
     try {
       const res = await fetch("/api/tools", {
@@ -135,7 +137,8 @@ export default function ChatPage() {
       return {
         data: result.success ? result.data : undefined,
         error: result.success ? undefined : result.error,
-        duration: Date.now() - start,
+        duration: result.metadata?.duration || (Date.now() - start),
+        cached: result.metadata?.cacheHit,
       };
     } catch {
       return { error: "Network error", duration: Date.now() - start };
@@ -169,6 +172,7 @@ export default function ChatPage() {
         timestamp: new Date(),
         status: result.error ? "error" : "success",
         duration: result.duration,
+        cached: result.cached,
       }]);
       setLoading(false);
       inputRef.current?.focus();
@@ -319,6 +323,7 @@ export default function ChatPage() {
                   <div className={cn("flex items-center gap-2 mt-1 px-1 text-xs text-zinc-600", msg.role === "user" ? "justify-end" : "justify-start")}>
                     <TimeAgo date={msg.timestamp} />
                     {msg.duration && <span>• {msg.duration}ms</span>}
+                    {msg.cached && <span className="text-emerald-500">• cached</span>}
                     {msg.role !== "user" && (
                       <button
                         onClick={() => copyToClipboard(msg.content, msg.id)}
@@ -374,6 +379,14 @@ export default function ChatPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-emerald-400 font-mono text-sm">/{cmd.name}</span>
+                      {cmd.permission !== "read" && (
+                        <span className={cn(
+                          "text-[10px] px-1.5 py-0.5 rounded font-medium",
+                          cmd.permission === "admin" ? "bg-red-500/20 text-red-400" : "bg-yellow-500/20 text-yellow-400"
+                        )}>
+                          {cmd.permission}
+                        </span>
+                      )}
                       <span className="text-zinc-500 text-xs truncate">{cmd.description}</span>
                     </div>
                     {cmd.params.length > 0 && (

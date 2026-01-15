@@ -1,12 +1,14 @@
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { Tool, ToolResult, limitSchema, statusSchema, depthSchema, repoSchema } from "./types";
+import { Tool, ToolResult, limitSchema, statusSchema, depthSchema, repoSchema, idSchema, toolError } from "./types";
 
 export const reviewTools: Tool[] = [
   {
     name: "reviews",
     description: "List code reviews with filtering",
     category: "reviews",
+    permission: "read",
+    cacheTtl: 30,
     params: [
       { name: "repo", required: false, description: "Filter by repository", type: "string" },
       { name: "limit", required: false, description: "Results (1-100)", type: "number", default: "10" },
@@ -19,19 +21,19 @@ export const reviewTools: Tool[] = [
     }),
     execute: async (params, ctx): Promise<ToolResult> => {
       const supabase = await createClient();
-      const limit = parseInt(params.limit || "10");
+      const limit = Math.min(parseInt(params.limit || "10"), 100);
       
       let query = supabase
         .from("reviews")
         .select("id, repo_full_name, pr_number, summary, score, status, created_at")
         .order("created_at", { ascending: false })
-        .limit(Math.min(limit, 100));
+        .limit(limit);
       
       if (params.repo) query = query.ilike("repo_full_name", `%${params.repo}%`);
       if (params.status) query = query.eq("status", params.status);
       
       const { data, error } = await query;
-      if (error) return { success: false, error: error.message };
+      if (error) return toolError("INTERNAL_ERROR", error.message);
       if (!data?.length) return { success: true, data: "No reviews found." };
       
       const output = `Found ${data.length} reviews:\n` + data.map(r => 
@@ -45,10 +47,12 @@ export const reviewTools: Tool[] = [
     name: "review",
     description: "Get detailed review information",
     category: "reviews",
+    permission: "read",
+    cacheTtl: 60,
     params: [
       { name: "id", required: true, description: "Review ID (full or partial)", type: "string" },
     ],
-    schema: z.object({ id: z.string().min(1) }),
+    schema: z.object({ id: idSchema }),
     execute: async (params, ctx): Promise<ToolResult> => {
       const supabase = await createClient();
       const { data, error } = await supabase
@@ -58,7 +62,8 @@ export const reviewTools: Tool[] = [
         .limit(1)
         .single();
       
-      if (error) return { success: false, error: error.code === "PGRST116" ? "Review not found" : error.message };
+      if (error?.code === "PGRST116") return toolError("NOT_FOUND", "Review not found");
+      if (error) return toolError("INTERNAL_ERROR", error.message);
       
       const comments = (data.comments as Array<{body: string; severity: string; category: string}>) || [];
       const output = `**Review ${data.id.slice(0,8)}**
@@ -80,6 +85,8 @@ ${comments.slice(0, 5).map(c => `  [${c.severity}] ${c.body?.slice(0, 100)}`).jo
     name: "trigger-review",
     description: "Queue a code review for a pull request",
     category: "reviews",
+    permission: "write",
+    rateLimit: { max: 10, windowMs: 60000 },
     params: [
       { name: "repo", required: true, description: "Repository (owner/repo)", type: "string" },
       { name: "pr", required: true, description: "PR number", type: "number" },
@@ -92,37 +99,41 @@ ${comments.slice(0, 5).map(c => `  [${c.severity}] ${c.body?.slice(0, 100)}`).jo
     }),
     execute: async (params, ctx): Promise<ToolResult> => {
       const supabase = await createClient();
+      const prNum = parseInt(params.pr || "0");
+      
+      if (!prNum) return toolError("VALIDATION_ERROR", "Invalid PR number");
       
       // Check for existing pending/processing job
       const { data: existing } = await supabase
         .from("review_queue")
         .select("id, status")
         .eq("repo_full_name", params.repo)
-        .eq("pr_number", parseInt(params.pr || "0"))
+        .eq("pr_number", prNum)
         .in("status", ["pending", "processing"])
         .single();
       
       if (existing) {
-        return { success: false, error: `Review already ${existing.status} (job: ${existing.id.slice(0,8)})` };
+        return toolError("CONFLICT", `Review already ${existing.status} (job: ${existing.id.slice(0,8)})`);
       }
       
       const { data, error } = await supabase
         .from("review_queue")
         .insert({
           repo_full_name: params.repo,
-          pr_number: parseInt(params.pr || "0"),
+          pr_number: prNum,
           status: "pending",
           depth: params.depth || "standard",
           attempts: 0,
+          requested_by: ctx.userId,
         })
         .select("id")
         .single();
       
-      if (error) return { success: false, error: error.message };
+      if (error) return toolError("INTERNAL_ERROR", error.message);
       
       return {
         success: true,
-        data: `✓ Review queued successfully\n• Repository: ${params.repo}\n• PR: #${params.pr}\n• Depth: ${params.depth || 'standard'}\n• Job ID: ${data.id.slice(0,8)}`,
+        data: `✓ Review queued successfully\n• Repository: ${params.repo}\n• PR: #${prNum}\n• Depth: ${params.depth || 'standard'}\n• Job ID: ${data.id.slice(0,8)}`,
         metadata: { duration: Date.now() - ctx.startTime, recordsAffected: 1 }
       };
     }

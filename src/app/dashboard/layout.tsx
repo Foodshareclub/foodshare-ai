@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,92 @@ const navItems = [
   { href: "/dashboard/analytics", label: "Analytics", icon: "📈" },
   { href: "/dashboard/settings", label: "Settings", icon: "⚙️" },
 ];
+
+interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+function SidebarChat() {
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const sendMessage = async () => {
+    if (!input.trim() || loading) return;
+    const userMsg = input.trim();
+    setInput("");
+    setMessages(prev => [...prev, { role: "user", content: userMsg }]);
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userMsg }),
+      });
+      const data = await res.json();
+      setMessages(prev => [...prev, { role: "assistant", content: data.response || "Sorry, I couldn't process that." }]);
+    } catch {
+      setMessages(prev => [...prev, { role: "assistant", content: "Error connecting to AI." }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 w-full"
+      >
+        <span>💬</span>
+        AI Chat
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-64 border border-zinc-700 rounded-lg bg-zinc-800/50 overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-700 bg-zinc-800">
+        <span className="text-sm font-medium text-white">💬 AI Chat</span>
+        <button onClick={() => setOpen(false)} className="text-zinc-400 hover:text-white text-xs">✕</button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-2 space-y-2">
+        {messages.length === 0 && (
+          <p className="text-xs text-zinc-500 text-center py-4">Ask about code reviews, security, or your repos...</p>
+        )}
+        {messages.map((msg, i) => (
+          <div key={i} className={cn("text-xs p-2 rounded", msg.role === "user" ? "bg-emerald-500/20 text-emerald-300 ml-4" : "bg-zinc-700 text-zinc-300 mr-4")}>
+            {msg.content}
+          </div>
+        ))}
+        {loading && <div className="text-xs text-zinc-500 animate-pulse">Thinking...</div>}
+        <div ref={messagesEndRef} />
+      </div>
+      <div className="p-2 border-t border-zinc-700">
+        <div className="flex gap-1">
+          <input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && sendMessage()}
+            placeholder="Ask AI..."
+            className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500"
+          />
+          <button onClick={sendMessage} disabled={loading} className="px-2 py-1 bg-emerald-500 text-white rounded text-xs hover:bg-emerald-600 disabled:opacity-50">
+            →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -76,6 +162,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {item.label}
             </Link>
           ))}
+          <div className="pt-2">
+            <SidebarChat />
+          </div>
         </nav>
 
         <div className="p-4 border-t border-zinc-800">

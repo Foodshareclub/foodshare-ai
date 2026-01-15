@@ -10,12 +10,15 @@ export async function GET(request: NextRequest) {
     const repo = searchParams.get("repo");
 
     const supabase = await createClient();
-    let query = supabase.from("security_scans").select("*").order("created_at", { ascending: false }).range(offset, offset + limit - 1);
+    let query = supabase.from("security_scans").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(offset, offset + limit - 1);
     if (repo) query = query.eq("repo_full_name", repo);
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
     if (error) throw error;
-    return ok({ scans: data });
+
+    const { count: repoCount } = await supabase.from("security_scans").select("repo_full_name", { count: "exact", head: true });
+
+    return ok({ scans: data, total: count, totalRepos: repoCount });
   } catch (error) {
     return handleError(error);
   }

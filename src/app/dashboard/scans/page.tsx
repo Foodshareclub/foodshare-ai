@@ -25,6 +25,8 @@ const LIMIT = 20;
 
 export default function ScansPage() {
   const [scans, setScans] = useState<Scan[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalRepos, setTotalRepos] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -43,6 +45,8 @@ export default function ScansPage() {
       const newScans = data.scans || [];
       
       setScans(prev => append ? [...prev, ...newScans] : newScans);
+      setTotal(data.total || 0);
+      setTotalRepos(data.totalRepos || 0);
       setHasMore(newScans.length === LIMIT);
     } finally {
       setLoading(false);
@@ -94,7 +98,7 @@ export default function ScansPage() {
     SAFE: "text-emerald-400", LOW: "text-green-400", MEDIUM: "text-yellow-400", HIGH: "text-orange-400", CRITICAL: "text-red-400"
   };
 
-  const uniqueRepos = new Set(scans.map(s => s.repo_full_name)).size;
+  const uniqueRepos = totalRepos || new Set(scans.map(s => s.repo_full_name)).size;
 
   if (loading) return <div className="flex items-center justify-center h-64 text-zinc-500">Loading...</div>;
 
@@ -103,7 +107,7 @@ export default function ScansPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Security Scans</h1>
-          <p className="text-zinc-500">{uniqueRepos} repos • {scans.length} scans loaded</p>
+          <p className="text-zinc-500">{uniqueRepos} repos • {total} scans</p>
         </div>
         <Button onClick={() => triggerScan()} disabled={!!scanning} className="bg-emerald-600 hover:bg-emerald-700">
           {scanning === "all" ? "Scanning..." : "🔍 Scan All Repos"}

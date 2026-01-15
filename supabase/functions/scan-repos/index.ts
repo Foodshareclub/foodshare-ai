@@ -6,15 +6,47 @@ const GITHUB_TOKEN = Deno.env.get("GITHUB_TOKEN") || "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const SCAN_PROMPT = `Analyze this code for security vulnerabilities, bugs, and quality issues.
+const SCAN_PROMPT = `You are a senior security engineer performing a THOROUGH code audit. Analyze this code deeply for:
 
-Categories:
-- SECURITY: SQL injection, XSS, hardcoded secrets, missing auth, unsafe eval, env leaks
-- BUG: null checks, async errors, race conditions, type mismatches
-- QUALITY: long functions, magic numbers, dead code, missing error handling
+## SECURITY (Critical Priority)
+- SQL/NoSQL injection vulnerabilities
+- XSS (Cross-Site Scripting) - reflected, stored, DOM-based
+- Authentication/Authorization flaws - broken auth, privilege escalation
+- Sensitive data exposure - hardcoded secrets, API keys, passwords, tokens
+- CSRF vulnerabilities
+- Insecure deserialization
+- Server-Side Request Forgery (SSRF)
+- Path traversal / Local File Inclusion
+- Command injection
+- Insecure cryptography
+- Missing security headers
+- CORS misconfigurations
 
-Return JSON array (empty if clean):
-[{"severity":"critical|high|medium|low","type":"security|bug|quality","title":"<issue>","file":"<path>","line":<num>,"problem":"<description>","fix":"<suggestion>"}]`;
+## BUGS (High Priority)
+- Null/undefined reference errors
+- Race conditions and concurrency issues
+- Memory leaks
+- Unhandled promise rejections
+- Type coercion bugs
+- Off-by-one errors
+- Resource leaks (unclosed connections, file handles)
+- Infinite loops potential
+- Integer overflow/underflow
+
+## QUALITY (Medium Priority)
+- Functions over 50 lines
+- Deeply nested code (>3 levels)
+- Duplicated code blocks
+- Missing error handling
+- Console.log/print statements in production
+- TODO/FIXME/HACK comments
+- Unused variables/imports
+- Magic numbers without constants
+
+Be AGGRESSIVE - report ALL issues found. Better to over-report than miss vulnerabilities.
+
+Return JSON array (empty [] ONLY if code is perfect):
+[{"severity":"critical|high|medium|low","type":"security|bug|quality","title":"<concise issue>","file":"<path>","line":<number>,"problem":"<detailed explanation>","fix":"<specific code fix or recommendation>","cwe":"<CWE-ID if applicable>"}]`;
 
 const ghFetch = async (endpoint: string) => {
   const headers: Record<string, string> = { Accept: "application/vnd.github+json", "User-Agent": "FoodShare-Scan" };
@@ -29,15 +61,22 @@ async function getRepoFiles(owner: string, repo: string): Promise<string[]> {
     try {
       const tree = await ghFetch(`/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`) as { tree?: Array<{ type: string; size: number; path: string }> };
       return (tree.tree || [])
-        .filter((f) => f.type === "blob" && f.size > 50 && f.size < 50000)
-        .filter((f) => /\.(ts|tsx|js|jsx|py|go|rs|java|rb|php)$/i.test(f.path))
-        .filter((f) => !/(node_modules|vendor|dist|build|\.min\.|test|spec|__pycache__|\.next|\.git)/i.test(f.path))
+        .filter((f) => f.type === "blob" && f.size > 50 && f.size < 100000)
+        .filter((f) => /\.(ts|tsx|js|jsx|py|go|rs|java|rb|php|swift|kt|cs|c|cpp|h)$/i.test(f.path))
+        .filter((f) => !/(node_modules|vendor|dist|build|\.min\.|__tests__|__mocks__|\.test\.|\.spec\.|__pycache__|\.next|\.git|coverage)/i.test(f.path))
         .sort((a, b) => {
-          const priority = (p: string) => /auth|login|secret|api|route|database|payment|admin/i.test(p) ? 0 : 10;
+          // Prioritize security-sensitive files
+          const priority = (p: string) => {
+            if (/auth|login|password|secret|token|api|admin|payment|crypto|session/i.test(p)) return 0;
+            if (/route|controller|handler|middleware|service/i.test(p)) return 1;
+            if (/database|model|schema|migration/i.test(p)) return 2;
+            if (/config|env|setting/i.test(p)) return 3;
+            return 10;
+          };
           return priority(a.path) - priority(b.path);
         })
         .map((f) => f.path)
-        .slice(0, 25);
+        .slice(0, 50); // Increased from 25 to 50 files
     } catch { continue; }
   }
   return [];
@@ -59,10 +98,10 @@ async function scanRepo(owner: string, repo: string): Promise<Record<string, unk
   let charCount = 0;
 
   for (const path of files) {
-    if (charCount >= 8000) break;
+    if (charCount >= 15000) break; // Increased from 8000 to 15000
     const content = await getFileContent(owner, repo, path);
     if (content.length > 30) {
-      const snippet = content.slice(0, 1200);
+      const snippet = content.slice(0, 2000); // Increased from 1200 to 2000
       charCount += snippet.length;
       codeBlocks.push(`=== ${path} ===\n${snippet}`);
     }
@@ -70,7 +109,7 @@ async function scanRepo(owner: string, repo: string): Promise<Record<string, unk
 
   if (!codeBlocks.length) return { repo: `${owner}/${repo}`, skipped: true, reason: "no content" };
 
-  const code = codeBlocks.join("\n\n").slice(0, 8000);
+  const code = codeBlocks.join("\n\n").slice(0, 15000); // Increased limit
   
   let findings: Array<Record<string, unknown>> = [];
   try {

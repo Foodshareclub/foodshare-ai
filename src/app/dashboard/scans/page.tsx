@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Scan {
   id: string;
@@ -32,8 +33,28 @@ export default function ScansPage() {
   const [hasMore, setHasMore] = useState(true);
   const [scanning, setScanning] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [repoFilter, setRepoFilter] = useState<string>("all");
+  const [severityFilter, setSeverityFilter] = useState<string>("all");
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  const filteredScans = useMemo(() => {
+    return scans.filter(scan => {
+      const repoMatch = repoFilter === "all" || scan.repo_full_name === repoFilter;
+      const severityMatch = severityFilter === "all" || 
+        (scan.scan_metadata?.by_severity && scan.scan_metadata.by_severity[severityFilter as keyof typeof scan.scan_metadata.by_severity] > 0);
+      return repoMatch && severityMatch;
+    });
+  }, [scans, repoFilter, severityFilter]);
+
+  const stats = useMemo(() => {
+    const totalIssues = filteredScans.reduce((sum, scan) => sum + (scan.issues?.length || 0), 0);
+    const avgScore = filteredScans.length ? Math.round(filteredScans.reduce((sum, scan) => sum + scan.security_score, 0) / filteredScans.length) : 0;
+    const criticalCount = filteredScans.reduce((sum, scan) => sum + (scan.scan_metadata?.by_severity?.critical || 0), 0);
+    return { totalIssues, avgScore, criticalCount };
+  }, [filteredScans]);
+
+  const uniqueRepos = useMemo(() => [...new Set(scans.map(s => s.repo_full_name))], [scans]);
 
   const fetchScans = useCallback(async (offset = 0, append = false) => {
     if (offset === 0) setLoading(true);
@@ -98,24 +119,69 @@ export default function ScansPage() {
     SAFE: "text-emerald-400", LOW: "text-green-400", MEDIUM: "text-yellow-400", HIGH: "text-orange-400", CRITICAL: "text-red-400"
   };
 
-  const uniqueRepos = totalRepos || new Set(scans.map(s => s.repo_full_name)).size;
-
-  if (loading) return <div className="flex items-center justify-center h-64 text-zinc-500">Loading...</div>;
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Security Scans</h1>
-          <p className="text-zinc-500">{uniqueRepos} repos • {total} scans</p>
+          <p className="text-zinc-500">{uniqueRepos.length} repos • {total} scans</p>
         </div>
         <Button onClick={() => triggerScan()} disabled={!!scanning} className="bg-emerald-600 hover:bg-emerald-700">
           {scanning === "all" ? "Scanning..." : "🔍 Scan All Repos"}
         </Button>
       </div>
 
+      {/* Stats Summary */}
+      <div className="grid grid-cols-3 gap-4">
+        <Card className="bg-zinc-900 border-zinc-800">
+          <CardContent className="p-4">
+            <div className="text-sm text-zinc-400">Total Issues</div>
+            <div className="text-2xl font-bold text-white">{stats.totalIssues}</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-zinc-900 border-zinc-800">
+          <CardContent className="p-4">
+            <div className="text-sm text-zinc-400">Avg Score</div>
+            <div className="text-2xl font-bold text-white">{stats.avgScore}/100</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-zinc-900 border-zinc-800">
+          <CardContent className="p-4">
+            <div className="text-sm text-zinc-400">Critical Issues</div>
+            <div className="text-2xl font-bold text-red-400">{stats.criticalCount}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-4">
+        <Select value={repoFilter} onValueChange={setRepoFilter}>
+          <SelectTrigger className="w-48 bg-zinc-900 border-zinc-800">
+            <SelectValue placeholder="Filter by repo" />
+          </SelectTrigger>
+          <SelectContent className="bg-zinc-900 border-zinc-800">
+            <SelectItem value="all">All Repos</SelectItem>
+            {uniqueRepos.map(repo => (
+              <SelectItem key={repo} value={repo}>{repo}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={severityFilter} onValueChange={setSeverityFilter}>
+          <SelectTrigger className="w-48 bg-zinc-900 border-zinc-800">
+            <SelectValue placeholder="Filter by severity" />
+          </SelectTrigger>
+          <SelectContent className="bg-zinc-900 border-zinc-800">
+            <SelectItem value="all">All Severities</SelectItem>
+            <SelectItem value="critical">Critical</SelectItem>
+            <SelectItem value="high">High</SelectItem>
+            <SelectItem value="medium">Medium</SelectItem>
+            <SelectItem value="low">Low</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       <div className="space-y-4">
-        {scans.map(scan => {
+        {filteredScans.map(scan => {
           const grade = scan.scan_metadata?.grade || (scan.security_score >= 90 ? "A" : scan.security_score >= 80 ? "B" : scan.security_score >= 70 ? "C" : scan.security_score >= 60 ? "D" : "F");
           const threat = scan.scan_metadata?.threat_level || "MEDIUM";
           const isExpanded = expanded === scan.id;

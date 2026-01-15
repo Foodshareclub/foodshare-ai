@@ -33,14 +33,15 @@ function ChatPanel({ onClose }: { onClose: () => void }) {
     if (!input.trim() || loading) return;
     const userMsg = input.trim();
     setInput("");
-    setMessages(prev => [...prev, { role: "user", content: userMsg }]);
+    const newMessages = [...messages, { role: "user" as const, content: userMsg }];
+    setMessages(newMessages);
     setLoading(true);
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMsg }),
+        body: JSON.stringify({ message: userMsg, history: newMessages.slice(-6) }),
       });
       const data = await res.json();
       setMessages(prev => [...prev, { role: "assistant", content: data.response || "Sorry, I couldn't process that." }]);
@@ -51,27 +52,48 @@ function ChatPanel({ onClose }: { onClose: () => void }) {
     }
   };
 
+  const suggestions = [
+    "What security issues should I watch for?",
+    "How can I improve code performance?",
+    "Explain my recent review scores",
+  ];
+
   return (
-    <aside className="w-80 flex-shrink-0 border-l border-zinc-800 bg-zinc-900 flex flex-col h-full">
+    <aside className="w-96 flex-shrink-0 border-l border-zinc-800 bg-zinc-900 flex flex-col h-full">
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
         <span className="font-medium text-white flex items-center gap-2">💬 AI Assistant</span>
-        <button onClick={onClose} className="text-zinc-400 hover:text-white">✕</button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setMessages([])} className="text-xs text-zinc-500 hover:text-white">Clear</button>
+          <button onClick={onClose} className="text-zinc-400 hover:text-white">✕</button>
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
-          <div className="text-sm text-zinc-500 text-center py-8">
-            <p>Ask me about:</p>
-            <p className="mt-2 text-xs">• Code reviews & best practices</p>
-            <p className="text-xs">• Security vulnerabilities</p>
-            <p className="text-xs">• Your repositories</p>
+          <div className="space-y-3">
+            <p className="text-sm text-zinc-400 text-center">How can I help you today?</p>
+            <div className="space-y-2">
+              {suggestions.map((s, i) => (
+                <button
+                  key={i}
+                  onClick={() => { setInput(s); }}
+                  className="w-full text-left text-xs p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white transition-colors"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
         )}
         {messages.map((msg, i) => (
-          <div key={i} className={cn("text-sm p-3 rounded-lg", msg.role === "user" ? "bg-emerald-500/20 text-emerald-300 ml-8" : "bg-zinc-800 text-zinc-300 mr-8")}>
+          <div key={i} className={cn("text-sm p-3 rounded-lg whitespace-pre-wrap", msg.role === "user" ? "bg-emerald-500/20 text-emerald-300 ml-6" : "bg-zinc-800 text-zinc-300 mr-2")}>
             {msg.content}
           </div>
         ))}
-        {loading && <div className="text-sm text-zinc-500 animate-pulse p-3">Thinking...</div>}
+        {loading && (
+          <div className="flex items-center gap-2 text-sm text-zinc-500 p-3">
+            <span className="animate-spin">⚡</span> Thinking...
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
       <div className="p-4 border-t border-zinc-800">

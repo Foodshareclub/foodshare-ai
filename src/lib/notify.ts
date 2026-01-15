@@ -94,16 +94,38 @@ export async function notifyReviewFailed(
   });
 }
 
+export async function notifySecurityIssue(
+  repo: string,
+  prNumber: number,
+  severity: "critical" | "high" | "medium",
+  issue: string
+): Promise<void> {
+  await notify({
+    type: severity === "critical" ? "error" : "warning",
+    message: `🚨 ${severity.toUpperCase()} security issue detected`,
+    metadata: {
+      repo,
+      pr: `#${prNumber}`,
+      severity,
+      issue: issue.slice(0, 300),
+    },
+  });
+}
+
 export async function notifyReviewCompleted(
   repo: string,
   prNumber: number,
-  issueCount: number
+  issueCount: number,
+  securityIssues: number = 0
 ): Promise<void> {
-  if (issueCount > 5) {
-    await notify({
-      type: "info",
-      message: `Review completed with ${issueCount} issues found`,
-      metadata: { repo, pr: `#${prNumber}` },
-    });
-  }
+  await notify({
+    type: securityIssues > 0 ? "warning" : "info",
+    message: `✅ Review completed: ${issueCount} issues, ${securityIssues} security`,
+    metadata: { 
+      repo, 
+      pr: `#${prNumber}`,
+      total_issues: issueCount,
+      security_issues: securityIssues,
+    },
+  });
 }

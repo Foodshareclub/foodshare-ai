@@ -1,5 +1,24 @@
 import { ReviewCategory } from "./models";
 
+export enum Language {
+  TYPESCRIPT = "typescript",
+  PYTHON = "python",
+  GO = "go",
+  RUST = "rust",
+  OTHER = "other"
+}
+
+export function detectLanguage(filesSummary: string, diffContent: string): Language {
+  const content = (filesSummary + diffContent).toLowerCase();
+  
+  if (content.includes('.ts') || content.includes('.tsx') || content.includes('typescript')) return Language.TYPESCRIPT;
+  if (content.includes('.py') || content.includes('python') || content.includes('import ') && content.includes('def ')) return Language.PYTHON;
+  if (content.includes('.go') || content.includes('package main') || content.includes('func ')) return Language.GO;
+  if (content.includes('.rs') || content.includes('fn ') || content.includes('cargo')) return Language.RUST;
+  
+  return Language.OTHER;
+}
+
 export const SYSTEM_PROMPT = `You are an expert senior code reviewer like CodeRabbit. Provide thorough, actionable feedback.
 
 ## Review Philosophy
@@ -151,6 +170,38 @@ const BEST_PRACTICES_FOCUS = `
 - Documentation and comments where needed
 `;
 
+const LANGUAGE_SPECIFIC_FOCUS = {
+  [Language.TYPESCRIPT]: `
+- TypeScript-specific: strict typing, avoid 'any', proper generics usage
+- React patterns if applicable (hooks, component structure)
+- Node.js best practices for backend code
+- Proper async/await and Promise handling
+- ESLint/Prettier compliance
+`,
+  [Language.PYTHON]: `
+- Python-specific: PEP 8 compliance, type hints, proper imports
+- Django/Flask patterns if applicable
+- Proper exception handling with try/except
+- List comprehensions vs loops efficiency
+- Virtual environment and dependency management
+`,
+  [Language.GO]: `
+- Go-specific: proper error handling, goroutine safety
+- Interface usage and composition over inheritance
+- Memory management and garbage collection considerations
+- Proper use of channels and select statements
+- Go modules and package organization
+`,
+  [Language.RUST]: `
+- Rust-specific: ownership, borrowing, and lifetime management
+- Proper error handling with Result<T, E>
+- Memory safety without garbage collection
+- Trait usage and generic programming
+- Cargo.toml dependencies and features
+`,
+  [Language.OTHER]: ""
+};
+
 export function truncateDescription(description: string, maxChars: number = 1000): string {
   if (!description) {
     return "No description provided";
@@ -173,6 +224,7 @@ export function buildReviewPrompt(
     ReviewCategory.BEST_PRACTICES,
   ]
 ): string {
+  const language = detectLanguage(filesSummary, diffContent);
   const focusParts: string[] = [];
 
   if (categories.includes(ReviewCategory.SECURITY)) {
@@ -186,6 +238,12 @@ export function buildReviewPrompt(
   }
   if (categories.includes(ReviewCategory.BEST_PRACTICES)) {
     focusParts.push(BEST_PRACTICES_FOCUS);
+  }
+
+  // Add language-specific focus
+  const langFocus = LANGUAGE_SPECIFIC_FOCUS[language];
+  if (langFocus) {
+    focusParts.push(langFocus);
   }
 
   return REVIEW_PROMPT_TEMPLATE
@@ -226,6 +284,7 @@ export function buildIncrementalPrompt(
     ReviewCategory.BEST_PRACTICES,
   ]
 ): string {
+  const language = detectLanguage(filesSummary, diffContent);
   const focusParts: string[] = [];
 
   if (categories.includes(ReviewCategory.SECURITY)) {
@@ -239,6 +298,12 @@ export function buildIncrementalPrompt(
   }
   if (categories.includes(ReviewCategory.BEST_PRACTICES)) {
     focusParts.push(BEST_PRACTICES_FOCUS);
+  }
+
+  // Add language-specific focus
+  const langFocus = LANGUAGE_SPECIFIC_FOCUS[language];
+  if (langFocus) {
+    focusParts.push(langFocus);
   }
 
   return INCREMENTAL_PROMPT_TEMPLATE

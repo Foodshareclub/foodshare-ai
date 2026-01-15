@@ -1,11 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+
+const AnalyticsChart = dynamic(() => import("@/components/analytics-chart"), { ssr: false });
 
 interface Review {
   id: string;
@@ -260,6 +263,9 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Analytics Charts */}
+      <AnalyticsChart />
 
       <div className="grid gap-4 md:gap-6 md:grid-cols-2">
         {/* Recent Reviews */}

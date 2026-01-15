@@ -1,39 +1,43 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { chat, getLLMStatus } from "../_shared/llm.ts";
+import { chat } from "../_shared/llm.ts";
 
 const GITHUB_TOKEN = Deno.env.get("GITHUB_TOKEN") || "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const SECURITY_PROMPT = `Find ALL security vulnerabilities. Report: env var access without validation, unsanitized input, SQL injection, hardcoded secrets, missing auth, eval/innerHTML, CORS issues. Be aggressive.`;
-const BUG_PROMPT = `Find ALL bugs: missing null checks, async without try/catch, missing await, race conditions, off-by-one errors. Be aggressive.`;
-const QUALITY_PROMPT = `Find ALL quality issues: long functions, deep nesting, magic numbers, repeated code, unclear names, console.log, TODOs. Be aggressive.`;
+const SCAN_PROMPT = `Analyze this code for security vulnerabilities, bugs, and quality issues.
 
-const SCAN_FORMAT = `Return JSON array: [{"severity":"critical|high|medium|low","category":"<type>","title":"<issue>","file":"<path>","line":<num>,"problem":"<why>","fix":"<how>"}]. Return [] if perfect.`;
+Categories:
+- SECURITY: SQL injection, XSS, hardcoded secrets, missing auth, unsafe eval, env leaks
+- BUG: null checks, async errors, race conditions, type mismatches
+- QUALITY: long functions, magic numbers, dead code, missing error handling
 
-async function ghFetch(endpoint: string): Promise<unknown> {
+Return JSON array (empty if clean):
+[{"severity":"critical|high|medium|low","type":"security|bug|quality","title":"<issue>","file":"<path>","line":<num>,"problem":"<description>","fix":"<suggestion>"}]`;
+
+const ghFetch = async (endpoint: string) => {
   const headers: Record<string, string> = { Accept: "application/vnd.github+json", "User-Agent": "FoodShare-Scan" };
   if (GITHUB_TOKEN) headers.Authorization = `Bearer ${GITHUB_TOKEN}`;
   const res = await fetch(`https://api.github.com${endpoint}`, { headers });
   if (!res.ok) throw new Error(`GitHub ${res.status}`);
   return res.json();
-}
+};
 
 async function getRepoFiles(owner: string, repo: string): Promise<string[]> {
   for (const branch of ["main", "master", "develop"]) {
     try {
       const tree = await ghFetch(`/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`) as { tree?: Array<{ type: string; size: number; path: string }> };
       return (tree.tree || [])
-        .filter((f) => f.type === "blob" && f.size > 50 && f.size < 80000)
+        .filter((f) => f.type === "blob" && f.size > 50 && f.size < 50000)
         .filter((f) => /\.(ts|tsx|js|jsx|py|go|rs|java|rb|php)$/i.test(f.path))
-        .filter((f) => !/(node_modules|vendor|dist|build|\.min\.|test|spec|__pycache__|\.next)/i.test(f.path))
+        .filter((f) => !/(node_modules|vendor|dist|build|\.min\.|test|spec|__pycache__|\.next|\.git)/i.test(f.path))
         .sort((a, b) => {
-          const priority = (p: string) => /auth|login|secret|api|route|database|payment/i.test(p) ? 0 : 10;
+          const priority = (p: string) => /auth|login|secret|api|route|database|payment|admin/i.test(p) ? 0 : 10;
           return priority(a.path) - priority(b.path);
         })
         .map((f) => f.path)
-        .slice(0, 30);
+        .slice(0, 25);
     } catch { continue; }
   }
   return [];
@@ -47,20 +51,7 @@ async function getFileContent(owner: string, repo: string, path: string): Promis
   return "";
 }
 
-async function runScan(scanType: string, prompt: string, code: string): Promise<Array<Record<string, unknown>>> {
-  try {
-    const content = await chat(`${prompt}\n\n${SCAN_FORMAT}\n\n${code}`, { temperature: 0.3, maxTokens: 2000 });
-    let json = content.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
-    const start = json.indexOf("["), end = json.lastIndexOf("]") + 1;
-    if (start >= 0 && end > start) json = json.slice(start, end);
-    return JSON.parse(json);
-  } catch (e) {
-    console.error(`[SCAN] ${scanType} error: ${e}`);
-    return [];
-  }
-}
-
-async function intelligentScan(owner: string, repo: string): Promise<Record<string, unknown>> {
+async function scanRepo(owner: string, repo: string): Promise<Record<string, unknown>> {
   const files = await getRepoFiles(owner, repo);
   if (!files.length) return { repo: `${owner}/${repo}`, skipped: true, reason: "no files" };
 
@@ -68,29 +59,29 @@ async function intelligentScan(owner: string, repo: string): Promise<Record<stri
   let charCount = 0;
 
   for (const path of files) {
-    if (charCount >= 10000) break;
+    if (charCount >= 8000) break;
     const content = await getFileContent(owner, repo, path);
     if (content.length > 30) {
-      const snippet = content.slice(0, 1500);
+      const snippet = content.slice(0, 1200);
       charCount += snippet.length;
-      codeBlocks.push(`\n=== ${path} ===\n${snippet}`);
+      codeBlocks.push(`=== ${path} ===\n${snippet}`);
     }
   }
 
   if (!codeBlocks.length) return { repo: `${owner}/${repo}`, skipped: true, reason: "no content" };
 
-  const code = codeBlocks.join("\n").slice(0, 10000);
-  const [security, bugs, quality] = await Promise.all([
-    runScan("security", SECURITY_PROMPT, code),
-    runScan("bugs", BUG_PROMPT, code),
-    runScan("quality", QUALITY_PROMPT, code),
-  ]);
-
-  const findings = [
-    ...security.map((f) => ({ ...f, type: "security" })),
-    ...bugs.map((f) => ({ ...f, type: "bug" })),
-    ...quality.map((f) => ({ ...f, type: "quality" })),
-  ];
+  const code = codeBlocks.join("\n\n").slice(0, 8000);
+  
+  let findings: Array<Record<string, unknown>> = [];
+  try {
+    const response = await chat(`${SCAN_PROMPT}\n\n${code}`, { temperature: 0.2, maxTokens: 2000, timeout: 180000 });
+    let json = response.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
+    const start = json.indexOf("["), end = json.lastIndexOf("]") + 1;
+    if (start >= 0 && end > start) json = json.slice(start, end);
+    findings = JSON.parse(json);
+  } catch (e) {
+    console.error(`Scan parse error: ${e}`);
+  }
 
   const c = findings.filter((f) => f.severity === "critical").length;
   const h = findings.filter((f) => f.severity === "high").length;
@@ -103,7 +94,7 @@ async function intelligentScan(owner: string, repo: string): Promise<Record<stri
 
   return {
     repo: `${owner}/${repo}`, score, grade, threat_level: threat,
-    summary: `Scanned ${codeBlocks.length} files. Found ${security.length} security, ${bugs.length} bugs, ${quality.length} quality issues.`,
+    summary: `Scanned ${codeBlocks.length} files. Found ${findings.length} issues: ${c} critical, ${h} high, ${m} medium, ${l} low.`,
     by_severity: { critical: c, high: h, medium: m, low: l },
     files_analyzed: codeBlocks.length,
     findings,
@@ -119,17 +110,19 @@ serve(async (req) => {
 
   const repos = testRepo
     ? [{ full_name: testRepo }]
-    : (await supabase.from("repo_configs").select("full_name").eq("enabled", true).limit(5)).data;
+    : (await supabase.from("repo_configs").select("full_name").eq("enabled", true)).data;
 
-  if (!repos?.length) return Response.json({ error: "No repos" }, { status: 400 });
+  if (!repos?.length) return Response.json({ error: "No repos configured" }, { status: 400 });
 
   const results = [];
   for (const repo of repos) {
-    if (Date.now() - start > 250000) break;
+    if (Date.now() - start > 280000) break; // 4.5 min safety margin
     const [owner, name] = repo.full_name.split("/");
     try {
-      const result = await intelligentScan(owner, name);
+      console.log(`Scanning ${repo.full_name}...`);
+      const result = await scanRepo(owner, name);
       results.push(result);
+      
       if (!result.skipped) {
         await supabase.from("security_scans").insert({
           repo_full_name: repo.full_name,
@@ -145,5 +138,9 @@ serve(async (req) => {
     }
   }
 
-  return Response.json({ repos_scanned: results.length, duration_s: ((Date.now() - start) / 1000).toFixed(1), results, llm: getLLMStatus() });
+  return Response.json({ 
+    repos_scanned: results.length, 
+    duration_s: ((Date.now() - start) / 1000).toFixed(1), 
+    results 
+  });
 });

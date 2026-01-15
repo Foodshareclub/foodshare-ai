@@ -94,7 +94,7 @@ export const repoTools: Tool[] = [
       { name: "auto", required: false, description: "Auto-review PRs", type: "boolean" },
     ],
     schema: z.object({
-      repo: z.string().min(1),
+      repo: z.string().min(1, "Repository name required"),
       enabled: z.string().optional(),
       depth: depthSchema.optional(),
       auto: z.string().optional(),
@@ -141,7 +141,7 @@ export const repoTools: Tool[] = [
       { name: "confirm", required: true, description: "Type 'yes' to confirm", type: "string" },
     ],
     schema: z.object({
-      repo: z.string().min(1),
+      repo: z.string().min(1, "Repository name required"),
       confirm: z.literal("yes"),
     }),
     execute: async (params, ctx): Promise<ToolResult> => {

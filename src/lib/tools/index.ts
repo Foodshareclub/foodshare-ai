@@ -132,8 +132,17 @@ export async function executeTool(
   // Validate args
   const validation = tool.schema.safeParse(args);
   if (!validation.success) {
-    const errors = validation.error.issues.map(e => `${e.path.join(".") || "param"}: ${e.message}`).join(", ");
-    return toolError("VALIDATION_ERROR", errors);
+    const errors = validation.error.issues.map(e => {
+      const field = e.path.length > 0 ? e.path.join(".") : null;
+      return field ? `${field}: ${e.message}` : e.message;
+    }).join("; ");
+    
+    // Show usage hint
+    const usage = tool.params.length > 0 
+      ? `\nUsage: /${name} ${tool.params.map(p => p.required ? `<${p.name}>` : `[${p.name}]`).join(" ")}`
+      : "";
+    
+    return toolError("VALIDATION_ERROR", errors + usage);
   }
   
   // Check cache for read operations

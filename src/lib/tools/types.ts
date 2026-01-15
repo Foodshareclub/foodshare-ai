@@ -75,14 +75,16 @@ export interface AuditEntry {
   duration: number;
 }
 
-// Validation schemas
-export const repoSchema = z.string().min(3).regex(/^[\w.-]+\/[\w.-]+$/, "Format: owner/repo");
+// Validation schemas - Zod v4 syntax
+export const repoSchema = z.string().min(3, "Repository name too short").regex(/^[\w.-]+\/[\w.-]+$/, "Format must be owner/repo");
 export const depthSchema = z.enum(["quick", "standard", "deep"]).default("standard");
 export const gradeSchema = z.enum(["A", "B", "C", "D", "F"]);
 export const statusSchema = z.enum(["pending", "processing", "completed", "failed"]);
 export const limitSchema = z.coerce.number().int().min(1).max(100).default(10);
 export const daysSchema = z.coerce.number().int().min(1).max(365).default(7);
-export const idSchema = z.string().min(4).max(36);
+export const idSchema = z.string().min(4, "ID too short");
+export const prSchema = z.coerce.number().int().positive("PR must be a positive number");
+export const confirmSchema = z.literal("yes");
 
 // Error factory
 export function toolError(code: ErrorCode, message: string): ToolResult {

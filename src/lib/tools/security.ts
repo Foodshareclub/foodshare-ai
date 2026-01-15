@@ -54,7 +54,7 @@ export const securityTools: Tool[] = [
     params: [
       { name: "repo", required: true, description: "Repository name", type: "string" },
     ],
-    schema: z.object({ repo: z.string().min(1) }),
+    schema: z.object({ repo: z.string().min(1, "Repository name required") }),
     execute: async (params, ctx): Promise<ToolResult> => {
       const supabase = await createClient();
       const { data, error } = await supabase

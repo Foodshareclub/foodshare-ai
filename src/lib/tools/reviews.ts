@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { Tool, ToolResult, limitSchema, statusSchema, depthSchema, repoSchema, idSchema, toolError } from "./types";
+import { Tool, ToolResult, limitSchema, statusSchema, depthSchema, repoSchema, prSchema, toolError } from "./types";
 
 export const reviewTools: Tool[] = [
   {
@@ -52,7 +52,7 @@ export const reviewTools: Tool[] = [
     params: [
       { name: "id", required: true, description: "Review ID (full or partial)", type: "string" },
     ],
-    schema: z.object({ id: idSchema }),
+    schema: z.object({ id: z.string().min(4, "Review ID required (min 4 chars)") }),
     execute: async (params, ctx): Promise<ToolResult> => {
       const supabase = await createClient();
       const { data, error } = await supabase
@@ -94,7 +94,7 @@ ${comments.slice(0, 5).map(c => `  [${c.severity}] ${c.body?.slice(0, 100)}`).jo
     ],
     schema: z.object({
       repo: repoSchema,
-      pr: z.coerce.number().int().positive(),
+      pr: prSchema,
       depth: depthSchema.optional(),
     }),
     execute: async (params, ctx): Promise<ToolResult> => {

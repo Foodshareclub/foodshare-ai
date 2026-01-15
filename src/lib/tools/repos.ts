@@ -16,7 +16,7 @@ export const repoTools: Tool[] = [
       const { data, error } = await supabase
         .from("repo_configs")
         .select("*")
-        .order("repo_full_name");
+        .order("full_name");
       
       if (error) return toolError("INTERNAL_ERROR", error.message);
       if (!data?.length) return { success: true, data: "No repositories configured." };
@@ -25,7 +25,10 @@ export const repoTools: Tool[] = [
       const output = `**${data.length} Repositories** (${enabled} enabled)\n\n` + data.map(r => {
         const status = r.enabled ? "✓" : "✗";
         const auto = r.auto_review ? "auto" : "manual";
-        return `${status} **${r.repo_full_name}**\n  depth: ${r.review_depth} | ${auto} | ignore: ${(r.ignore_patterns as string[])?.length || 0} patterns`;
+        const name = r.repo_full_name || r.full_name;
+        const depth = r.review_depth || "standard";
+        const ignoreCount = (r.ignore_patterns as string[])?.length || (r.ignore_paths as string[])?.length || 0;
+        return `${status} **${name}**\n  depth: ${depth} | ${auto} | ignore: ${ignoreCount} patterns`;
       }).join("\n\n");
       
       return { success: true, data: output, metadata: { duration: Date.now() - ctx.startTime, recordsAffected: data.length } };
@@ -50,11 +53,11 @@ export const repoTools: Tool[] = [
     execute: async (params, ctx): Promise<ToolResult> => {
       const supabase = await createClient();
       
-      // Check if already exists
+      // Check if already exists (check both column names)
       const { data: existing } = await supabase
         .from("repo_configs")
         .select("id")
-        .eq("repo_full_name", params.repo)
+        .or(`full_name.eq.${params.repo},repo_full_name.eq.${params.repo}`)
         .single();
       
       if (existing) {
@@ -62,6 +65,7 @@ export const repoTools: Tool[] = [
       }
       
       const { error } = await supabase.from("repo_configs").insert({
+        full_name: params.repo,
         repo_full_name: params.repo,
         enabled: true,
         review_depth: params.depth || "standard",
@@ -107,16 +111,17 @@ export const repoTools: Tool[] = [
         return toolError("VALIDATION_ERROR", "No updates specified. Use: enabled, depth, or auto");
       }
       
+      // Try both column names for matching
       const { data, error } = await supabase
         .from("repo_configs")
         .update(updates)
-        .ilike("repo_full_name", `%${params.repo}%`)
-        .select("repo_full_name");
+        .or(`full_name.ilike.%${params.repo}%,repo_full_name.ilike.%${params.repo}%`)
+        .select("full_name, repo_full_name");
       
       if (error) return toolError("INTERNAL_ERROR", error.message);
       if (!data?.length) return toolError("NOT_FOUND", "Repository not found");
       
-      const repoName = data[0]?.repo_full_name || params.repo;
+      const repoName = data[0]?.repo_full_name || data[0]?.full_name || params.repo;
       const changes = Object.entries(updates).filter(([k]) => k !== "updated_at");
       
       return {
@@ -145,15 +150,15 @@ export const repoTools: Tool[] = [
       const { data, error } = await supabase
         .from("repo_configs")
         .delete()
-        .ilike("repo_full_name", `%${params.repo}%`)
-        .select("repo_full_name");
+        .or(`full_name.ilike.%${params.repo}%,repo_full_name.ilike.%${params.repo}%`)
+        .select("full_name, repo_full_name");
       
       if (error) return toolError("INTERNAL_ERROR", error.message);
       if (!data?.length) return toolError("NOT_FOUND", "Repository not found");
       
       return {
         success: true,
-        data: `✓ Removed ${data[0]?.repo_full_name || params.repo} from monitoring`,
+        data: `✓ Removed ${data[0]?.repo_full_name || data[0]?.full_name || params.repo} from monitoring`,
         metadata: { duration: Date.now() - ctx.startTime, recordsAffected: data.length }
       };
     }

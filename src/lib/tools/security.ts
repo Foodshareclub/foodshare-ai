@@ -25,7 +25,7 @@ export const securityTools: Tool[] = [
       
       let query = supabase
         .from("security_scans")
-        .select("id, repo_full_name, score, grade, critical_count, high_count, medium_count, created_at")
+        .select("id, repo_full_name, score, security_score, grade, critical_count, high_count, medium_count, created_at")
         .order("created_at", { ascending: false })
         .limit(limit);
       
@@ -36,9 +36,11 @@ export const securityTools: Tool[] = [
       if (error) return toolError("INTERNAL_ERROR", error.message);
       if (!data?.length) return { success: true, data: "No scans found." };
       
-      const output = `Found ${data.length} scans:\n` + data.map(s => 
-        `• ${s.repo_full_name}: Grade ${s.grade} (${s.score}/100) - 🔴${s.critical_count} 🟠${s.high_count} 🟡${s.medium_count}`
-      ).join("\n");
+      const output = `Found ${data.length} scans:\n` + data.map(s => {
+        const score = s.score ?? s.security_score ?? 0;
+        const grade = s.grade || (score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F');
+        return `• ${s.repo_full_name}: Grade ${grade} (${score}/100) - 🔴${s.critical_count || 0} 🟠${s.high_count || 0} 🟡${s.medium_count || 0}`;
+      }).join("\n");
       
       return { success: true, data: output, metadata: { duration: Date.now() - ctx.startTime, recordsAffected: data.length } };
     }
@@ -66,14 +68,17 @@ export const securityTools: Tool[] = [
       if (error?.code === "PGRST116") return toolError("NOT_FOUND", "No scan found for this repository");
       if (error) return toolError("INTERNAL_ERROR", error.message);
       
-      const findings = (data.findings as Array<{title: string; severity: string; description: string}>) || [];
+      const score = data.score ?? data.security_score ?? 0;
+      const grade = data.grade || (score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F');
+      const findings = (data.findings || data.issues || []) as Array<{title: string; severity: string; description: string}>;
+      
       const output = `**Security Scan: ${data.repo_full_name}**
-• Grade: ${data.grade} (${data.score}/100)
-• Critical: ${data.critical_count} | High: ${data.high_count} | Medium: ${data.medium_count}
+• Grade: ${grade} (${score}/100)
+• Critical: ${data.critical_count || 0} | High: ${data.high_count || 0} | Medium: ${data.medium_count || 0}
 • Scanned: ${new Date(data.created_at).toLocaleString()}
 
 **Top Findings:**
-${findings.slice(0, 8).map(f => `  [${f.severity.toUpperCase()}] ${f.title}`).join("\n") || "  No findings"}`;
+${findings.slice(0, 8).map(f => `  [${(f.severity || 'medium').toUpperCase()}] ${f.title || f.description?.slice(0, 60) || 'Issue'}`).join("\n") || "  No findings"}`;
       
       return { success: true, data: output, metadata: { duration: Date.now() - ctx.startTime } };
     }

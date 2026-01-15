@@ -11,10 +11,16 @@ export enum ReviewCategory {
   BUG = "bug",
   PERFORMANCE = "performance",
   BEST_PRACTICES = "best_practices",
+  TESTING = "testing",
+  API = "api",
+  DATABASE = "database",
+  DEVOPS = "devops",
+  ARCHITECTURE = "architecture",
   STYLE = "style",
   SUGGESTION = "suggestion",
   DEPENDENCY = "dependency",
   MAINTAINABILITY = "maintainability",
+  ACCESSIBILITY = "accessibility",
   OTHER = "other",
 }
 

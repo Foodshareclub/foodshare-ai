@@ -16,12 +16,12 @@ export default function AnalyticsChart() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/analytics?days=7").then(r => r.json()),
-      fetch("/api/scans?limit=100").then(r => r.json()),
+      fetch("/api/analytics?days=7").then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch("/api/scans?limit=100").then(r => r.ok ? r.json() : null).catch(() => null),
     ]).then(([analytics, scans]) => {
-      setData(analytics);
+      if (analytics) setData(analytics);
       const grades: Record<string, number> = { A: 0, B: 0, C: 0, D: 0, F: 0 };
-      (scans.scans || []).forEach((s: any) => {
+      (scans?.scans || []).forEach((s: any) => {
         const g = s.scan_metadata?.grade || (s.security_score >= 90 ? "A" : s.security_score >= 80 ? "B" : s.security_score >= 70 ? "C" : s.security_score >= 60 ? "D" : "F");
         grades[g]++;
       });

@@ -25,8 +25,9 @@ export default function AnalyticsPage() {
   useEffect(() => {
     setLoading(true);
     fetch(`/api/analytics?days=${days}`)
-      .then(r => r.json())
-      .then(setData)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && setData(d))
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, [days]);
 

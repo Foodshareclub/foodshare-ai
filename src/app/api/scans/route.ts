@@ -16,9 +16,10 @@ export async function GET(request: NextRequest) {
     const { data, error, count } = await query;
     if (error) throw error;
 
-    const { count: repoCount } = await supabase.from("security_scans").select("repo_full_name", { count: "exact", head: true });
+    const { data: repoData } = await supabase.from("security_scans").select("repo_full_name");
+    const uniqueRepos = new Set(repoData?.map(r => r.repo_full_name)).size;
 
-    return ok({ scans: data, total: count, totalRepos: repoCount });
+    return ok({ scans: data, total: count, totalRepos: uniqueRepos });
   } catch (error) {
     return handleError(error);
   }

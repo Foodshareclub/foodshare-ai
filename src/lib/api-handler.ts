@@ -4,6 +4,7 @@ import { logger } from './logger';
 import { handleError, ValidationError } from './errors';
 import { rateLimit, getClientIdentifier } from './rate-limit';
 import { randomUUID } from 'crypto';
+import { metrics } from './metrics';
 
 export interface ApiHandlerOptions {
   rateLimit?: { windowMs: number; maxRequests: number };
@@ -18,7 +19,10 @@ export function apiHandler(
 ) {
   return async (req: NextRequest, context: { params?: Record<string, string> } = {}) => {
     const requestId = randomUUID();
+    const startTime = Date.now();
+    
     logger.setContext({ requestId, method: req.method, url: req.url });
+    metrics.increment('api.requests', 1, { method: req.method, endpoint: new URL(req.url).pathname });
 
     try {
       // Rate limiting
@@ -28,6 +32,7 @@ export function apiHandler(
         const result = limiter(identifier);
 
         if (!result.allowed) {
+          metrics.increment('api.rate_limited', 1);
           return NextResponse.json(
             { error: 'Rate limit exceeded', code: 'RATE_LIMIT_EXCEEDED' },
             {
@@ -61,11 +66,23 @@ export function apiHandler(
       }
 
       const response = await handler(req, context);
-      logger.info('Request completed', { status: response.status });
+      
+      metrics.timing('api.response_time', startTime, { 
+        method: req.method, 
+        status: String(response.status) 
+      });
+      metrics.increment('api.responses', 1, { 
+        method: req.method, 
+        status: String(response.status) 
+      });
+      
+      logger.info('Request completed', { status: response.status, duration: Date.now() - startTime });
       return response;
 
     } catch (error) {
-      logger.error('Request failed', error);
+      metrics.increment('api.errors', 1, { method: req.method });
+      logger.error('Request failed', error, { duration: Date.now() - startTime });
+      
       const errorResponse = handleError(error);
       return NextResponse.json(
         { error: errorResponse.error, code: errorResponse.code, details: errorResponse.details },

@@ -28,7 +28,7 @@ export function parseDiff(diffText: string): FileDiff[] {
   let i = 0;
 
   while (i < lines.length) {
-    const line = lines[i];
+    const line = lines[i]!;
 
     const fileMatch = line.match(FILE_PATTERN);
     if (fileMatch) {
@@ -37,7 +37,7 @@ export function parseDiff(diffText: string): FileDiff[] {
         files.push(currentFile);
       }
 
-      const path = fileMatch[2];
+      const path = fileMatch[2]!;
       currentFile = {
         path,
         status: "modified",
@@ -53,9 +53,9 @@ export function parseDiff(diffText: string): FileDiff[] {
 
     const hunkMatch = line.match(HUNK_PATTERN);
     if (hunkMatch && currentFile) {
-      const oldStart = parseInt(hunkMatch[1], 10);
+      const oldStart = parseInt(hunkMatch[1]!, 10);
       const oldCount = parseInt(hunkMatch[2] || "1", 10);
-      const newStart = parseInt(hunkMatch[3], 10);
+      const newStart = parseInt(hunkMatch[3]!, 10);
       const newCount = parseInt(hunkMatch[4] || "1", 10);
 
       const hunkContent: string[] = [line];
@@ -63,13 +63,13 @@ export function parseDiff(diffText: string): FileDiff[] {
 
       while (
         i < lines.length &&
-        !lines[i].startsWith("diff --git") &&
-        !lines[i].startsWith("@@")
+        !lines[i]!.startsWith("diff --git") &&
+        !lines[i]!.startsWith("@@")
       ) {
-        hunkContent.push(lines[i]);
-        if (lines[i].startsWith("+") && !lines[i].startsWith("+++")) {
+        hunkContent.push(lines[i]!);
+        if (lines[i]!.startsWith("+") && !lines[i]!.startsWith("+++")) {
           currentFile.additions++;
-        } else if (lines[i].startsWith("-") && !lines[i].startsWith("---")) {
+        } else if (lines[i]!.startsWith("-") && !lines[i]!.startsWith("---")) {
           currentFile.deletions++;
         }
         i++;

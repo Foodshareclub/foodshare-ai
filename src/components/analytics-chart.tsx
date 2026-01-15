@@ -23,7 +23,7 @@ export default function AnalyticsChart() {
       const grades: Record<string, number> = { A: 0, B: 0, C: 0, D: 0, F: 0 };
       (scans?.scans || []).forEach((s: any) => {
         const g = s.scan_metadata?.grade || (s.security_score >= 90 ? "A" : s.security_score >= 80 ? "B" : s.security_score >= 70 ? "C" : s.security_score >= 60 ? "D" : "F");
-        grades[g]++;
+        grades[g]!++;
       });
       setSecurityData(Object.entries(grades).map(([grade, count]) => ({ grade, count })));
     });

@@ -20,7 +20,7 @@ function isRateLimitError(error: unknown): { isRateLimit: boolean; retryAfter?: 
   const isRateLimit = status === 429 || msg.includes("rate_limit") || msg.includes("rate limit");
   // Try to extract retry-after from error
   const retryMatch = msg.match(/retry.?after[:\s]+(\d+)/i);
-  return { isRateLimit, retryAfter: retryMatch ? parseInt(retryMatch[1], 10) * 1000 : undefined };
+  return { isRateLimit, retryAfter: retryMatch ? parseInt(retryMatch[1]!, 10) * 1000 : undefined };
 }
 
 export interface ChatOptions {

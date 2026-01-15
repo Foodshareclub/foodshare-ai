@@ -27,7 +27,6 @@ const LIMIT = 20;
 export default function ScansPage() {
   const [scans, setScans] = useState<Scan[]>([]);
   const [total, setTotal] = useState(0);
-  const [totalRepos, setTotalRepos] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -67,7 +66,6 @@ export default function ScansPage() {
       
       setScans(prev => append ? [...prev, ...newScans] : newScans);
       setTotal(data.total || 0);
-      setTotalRepos(data.totalRepos || 0);
       setHasMore(newScans.length === LIMIT);
     } finally {
       setLoading(false);
@@ -84,7 +82,7 @@ export default function ScansPage() {
 
     observerRef.current = new IntersectionObserver(
       entries => {
-        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+        if (entries[0]?.isIntersecting && hasMore && !loadingMore) {
           fetchScans(scans.length, true);
         }
       },

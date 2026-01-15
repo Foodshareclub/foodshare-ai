@@ -40,7 +40,7 @@ export function rateLimit(config: Partial<RateLimitConfig> = {}) {
 
 export function getClientIdentifier(req: NextRequest): string {
   const forwarded = req.headers.get('x-forwarded-for');
-  const ip = forwarded ? forwarded.split(',')[0] : req.headers.get('x-real-ip') || 'unknown';
+  const ip = forwarded ? forwarded.split(',')[0]! : req.headers.get('x-real-ip') || 'unknown';
   return ip;
 }
 
@@ -48,6 +48,6 @@ export function getClientIdentifier(req: NextRequest): string {
 setInterval(() => {
   const now = Date.now();
   Object.keys(store).forEach(key => {
-    if (store[key].resetAt < now) delete store[key];
+    if (store[key]!.resetAt < now) delete store[key];
   });
 }, 300000);

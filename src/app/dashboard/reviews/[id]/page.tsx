@@ -62,7 +62,6 @@ export default function ReviewDetailPage() {
   const [rerunning, setRerunning] = useState(false);
   const [activeTab, setActiveTab] = useState<"summary" | "security" | "issues" | "files" | "history">("summary");
   const [copiedId, setCopiedId] = useState<number | null>(null);
-  const [filterSeverity, setFilterSeverity] = useState<string>("all");
 
   useEffect(() => {
     fetch(`/api/reviews/${params.id}`)
@@ -481,7 +480,7 @@ export default function ReviewDetailPage() {
           ) : (
             <>
               <p className="text-sm text-zinc-500">Compare with previous reviews of this PR</p>
-              {previousReviews.map((prev, i) => {
+              {previousReviews.map((prev) => {
                 const prevIssues = prev.result?.line_comments?.length || 0;
                 const currentIssues = result?.line_comments?.length || 0;
                 const diff = currentIssues - prevIssues;

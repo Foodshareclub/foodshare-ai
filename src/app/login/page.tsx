@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { startRegistration, startAuthentication } from '@simplewebauthn/browser'
+import { startAuthentication } from '@simplewebauthn/browser'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')

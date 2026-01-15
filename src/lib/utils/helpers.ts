@@ -5,7 +5,7 @@ export function parseRepoFullName(fullName: string): { owner: string; repo: stri
   const parts = fullName.split("/");
   if (parts.length !== 2) return null;
   const [owner, repo] = parts;
-  if (!/^[\w.-]+$/.test(owner) || !/^[\w.-]+$/.test(repo)) return null;
+  if (!owner || !repo || !/^[\w.-]+$/.test(owner) || !/^[\w.-]+$/.test(repo)) return null;
   return { owner, repo };
 }
 

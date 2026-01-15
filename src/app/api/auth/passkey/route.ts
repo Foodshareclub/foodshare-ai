@@ -5,7 +5,7 @@ import crypto from "crypto";
 
 function getRpId(request: NextRequest): string {
   const host = request.headers.get("host") || "ai.foodshare.club";
-  return host.split(":")[0];
+  return host.split(":")[0]!;
 }
 
 export async function POST(request: NextRequest) {

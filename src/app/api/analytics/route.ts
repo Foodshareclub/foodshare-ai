@@ -29,13 +29,13 @@ export async function GET(request: NextRequest) {
       const high = issues.filter((c: any) => c.severity === "high").length;
 
       byDate[date] = byDate[date] || { count: 0, issues: 0, critical: 0 };
-      byDate[date].count++;
-      byDate[date].issues += issues.length;
-      byDate[date].critical += critical;
+      byDate[date]!.count++;
+      byDate[date]!.issues += issues.length;
+      byDate[date]!.critical += critical;
 
       byRepo[r.repo_full_name] = byRepo[r.repo_full_name] || { count: 0, issues: 0 };
-      byRepo[r.repo_full_name].count++;
-      byRepo[r.repo_full_name].issues += issues.length;
+      byRepo[r.repo_full_name]!.count++;
+      byRepo[r.repo_full_name]!.issues += issues.length;
 
       for (const c of issues) byCategory[c.category] = (byCategory[c.category] || 0) + 1;
       totalIssues += issues.length;

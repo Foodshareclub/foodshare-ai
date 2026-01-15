@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { reviewPullRequest, reviewAndPost } from "@/lib/review";
 import { createClient } from "@/lib/supabase/server";
-import { ok, err, handleError, validate, v, ApiError } from "@/lib/api";
+import { ok, handleError, validate, v } from "@/lib/api";
 
 interface ReviewInput {
   owner: string;

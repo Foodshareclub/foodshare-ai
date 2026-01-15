@@ -103,9 +103,9 @@ export async function reviewPullRequest(
   try {
     let json = response.trim();
     if (json.includes("```json")) {
-      json = json.split("```json")[1].split("```")[0];
+      json = json.split("```json")[1]!.split("```")[0]!;
     } else if (json.includes("```")) {
-      json = json.split("```")[1].split("```")[0];
+      json = json.split("```")[1]!.split("```")[0]!;
     }
 
     const parsed = JSON.parse(json.trim());

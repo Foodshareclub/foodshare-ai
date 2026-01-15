@@ -48,7 +48,7 @@ export function handleError(error: unknown) {
     return {
       error: 'Validation failed',
       code: 'VALIDATION_ERROR',
-      details: error.errors.errors,
+      details: error.errors.issues,
       statusCode: 400,
     };
   }

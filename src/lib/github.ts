@@ -58,6 +58,14 @@ export const pr = {
   files: (owner: string, repo: string, num: number) => gh(`/repos/${owner}/${repo}/pulls/${num}/files`),
   list: (owner: string, repo: string, state: "open" | "closed" | "all" = "open") => ghPaginate(`/repos/${owner}/${repo}/pulls?state=${state}`),
   compare: (owner: string, repo: string, base: string, head: string) => ghText(`/repos/${owner}/${repo}/compare/${base}...${head}`, "application/vnd.github.v3.diff"),
+  merge: (owner: string, repo: string, num: number, options?: {
+    commit_title?: string;
+    commit_message?: string;
+    merge_method?: "merge" | "squash" | "rebase";
+  }) => gh<{ sha: string; merged: boolean; message: string }>(
+    `/repos/${owner}/${repo}/pulls/${num}/merge`,
+    { method: "PUT", body: JSON.stringify(options || {}) }
+  ),
 };
 
 // Review operations

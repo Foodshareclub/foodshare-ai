@@ -74,8 +74,16 @@ export async function GET(request: NextRequest) {
     if (!owner || !repo) return err("Missing required params: owner, repo");
 
     const ghState = state === "merged" ? "closed" : state;
-    const data = await pr.list(owner, repo, ghState as "open" | "closed" | "all");
-    const pulls = data.map((p: { number: number; title: string; merged_at?: string; state: string; user?: { login: string }; created_at: string; html_url: string }) => ({
+    const data = await pr.list(owner, repo, ghState as "open" | "closed" | "all") as Array<{
+      number: number;
+      title: string;
+      merged_at?: string;
+      state: string;
+      user?: { login: string };
+      created_at: string;
+      html_url: string;
+    }>;
+    const pulls = data.map(p => ({
       number: p.number,
       title: p.title,
       state: p.merged_at ? "merged" : p.state,

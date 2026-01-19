@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac } from "crypto";
 import { createClient } from "@/lib/supabase/server";
-import { getPullRequestFiles } from "@/lib/github";
+import { getPullRequestFiles, pr as githubPR } from "@/lib/github";
 import { analyzePR, PRContext } from "@/lib/analysis";
 import { enqueueReview } from "@/lib/queue";
+import { upsertPullRequest, type GitHubPullRequest } from "@/lib/pr-store";
+import type { PRData } from "@/lib/llm-detection";
 
 const WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
 
@@ -46,13 +48,37 @@ export async function POST(request: NextRequest) {
     const body = JSON.parse(payload);
 
     if (event !== "pull_request") return NextResponse.json({ message: "Ignored event" });
-    if (!["opened", "synchronize"].includes(body.action)) {
-      return NextResponse.json({ message: `Ignored action: ${body.action}` });
-    }
 
     const pr = body.pull_request;
     const repo = body.repository;
     const fullName = repo.full_name;
+
+    // Persist PR to database on any pull_request event
+    const prActions = ["opened", "synchronize", "reopened", "closed", "edited", "labeled", "unlabeled"];
+    if (prActions.includes(body.action)) {
+      try {
+        // Fetch commits for LLM detection (co-author signals)
+        let commits: PRData["commits"] | undefined;
+        try {
+          commits = await githubPR.commits(repo.owner.login, repo.name, pr.number) as PRData["commits"];
+        } catch {
+          // Ignore commit fetch errors
+        }
+
+        await upsertPullRequest({
+          pr: pr as GitHubPullRequest,
+          repoFullName: fullName,
+          commits,
+        });
+      } catch (err) {
+        // Log but don't fail the webhook
+        console.error("Failed to persist PR:", err);
+      }
+    }
+
+    if (!["opened", "synchronize"].includes(body.action)) {
+      return NextResponse.json({ message: `Ignored action: ${body.action}` });
+    }
 
     const supabase = await createClient();
     const { data: config } = await supabase
@@ -68,8 +94,8 @@ export async function POST(request: NextRequest) {
     // Get files for analysis
     let files: string[] = [];
     try {
-      const prFiles = await getPullRequestFiles(repo.owner.login, repo.name, pr.number) as any[];
-      files = prFiles.map((f: any) => f.filename);
+      const prFiles = await getPullRequestFiles(repo.owner.login, repo.name, pr.number) as { filename: string }[];
+      files = prFiles.map((f) => f.filename);
     } catch { /* ignore */ }
 
     // Analyze PR
@@ -78,7 +104,7 @@ export async function POST(request: NextRequest) {
       additions: pr.additions || 0,
       deletions: pr.deletions || 0,
       title: pr.title || "",
-      labels: (pr.labels || []).map((l: any) => l.name),
+      labels: (pr.labels || []).map((l: { name: string }) => l.name),
       base_branch: pr.base?.ref || "main",
       files,
     };

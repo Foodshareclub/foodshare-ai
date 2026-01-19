@@ -34,7 +34,7 @@ async function testTools() {
   let failed = 0;
   
   for (const test of tests) {
-    const result = await executeTool(test.name, test.args, { correlationId: "test" });
+    const result = await executeTool(test.name, test.args as Record<string, string>, { correlationId: "test" });
     const gotError = !result.success;
     const testPassed = gotError === test.expectError;
     

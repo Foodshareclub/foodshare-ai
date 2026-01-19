@@ -1,5 +1,5 @@
 // Quick validation test for all tools
-import { tools, executeTool } from "./index";
+import { executeTool } from "./index";
 
 async function testTools() {
   console.log("Testing all tools validation...\n");

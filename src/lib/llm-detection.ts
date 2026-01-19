@@ -34,26 +34,29 @@ export interface PRData {
 }
 
 // Known bot usernames and patterns
+// IMPORTANT: Specific tool patterns must come BEFORE generic bot patterns
 const BOT_USERNAME_PATTERNS: Array<{ pattern: RegExp; tool: string; confidence: number }> = [
-  { pattern: /\[bot\]$/i, tool: 'bot', confidence: 0.95 },
-  { pattern: /^dependabot/i, tool: 'dependabot', confidence: 0.95 },
-  { pattern: /^renovate/i, tool: 'renovate', confidence: 0.95 },
-  { pattern: /^copilot/i, tool: 'copilot', confidence: 0.95 },
-  { pattern: /^github-actions/i, tool: 'github-actions', confidence: 0.95 },
-  { pattern: /^snyk-bot/i, tool: 'snyk', confidence: 0.95 },
-  { pattern: /^codecov/i, tool: 'codecov', confidence: 0.95 },
-  { pattern: /^greenkeeper/i, tool: 'greenkeeper', confidence: 0.95 },
-  { pattern: /^semantic-release/i, tool: 'semantic-release', confidence: 0.95 },
-  // Additional AI coding tools
-  { pattern: /^aider/i, tool: 'aider', confidence: 0.95 },
-  { pattern: /^devin/i, tool: 'devin', confidence: 0.95 },
-  { pattern: /^cody/i, tool: 'cody', confidence: 0.95 },
-  { pattern: /^tabnine/i, tool: 'tabnine', confidence: 0.95 },
-  { pattern: /^codewhisperer/i, tool: 'codewhisperer', confidence: 0.95 },
-  { pattern: /^amazon-q/i, tool: 'amazon-q', confidence: 0.95 },
-  { pattern: /^sweep/i, tool: 'sweep', confidence: 0.95 },
-  { pattern: /^grit/i, tool: 'grit', confidence: 0.95 },
-  { pattern: /^codegen/i, tool: 'codegen', confidence: 0.9 },
+  // Specific bot tools (match first)
+  { pattern: /^dependabot/i, tool: 'dependabot', confidence: 0.98 },
+  { pattern: /^renovate/i, tool: 'renovate', confidence: 0.98 },
+  { pattern: /^copilot/i, tool: 'copilot', confidence: 0.98 },
+  { pattern: /^github-actions/i, tool: 'github-actions', confidence: 0.98 },
+  { pattern: /^snyk-bot/i, tool: 'snyk', confidence: 0.98 },
+  { pattern: /^codecov/i, tool: 'codecov', confidence: 0.98 },
+  { pattern: /^greenkeeper/i, tool: 'greenkeeper', confidence: 0.98 },
+  { pattern: /^semantic-release/i, tool: 'semantic-release', confidence: 0.98 },
+  // AI coding tools
+  { pattern: /^aider/i, tool: 'aider', confidence: 0.98 },
+  { pattern: /^devin/i, tool: 'devin', confidence: 0.98 },
+  { pattern: /^cody/i, tool: 'cody', confidence: 0.98 },
+  { pattern: /^tabnine/i, tool: 'tabnine', confidence: 0.98 },
+  { pattern: /^codewhisperer/i, tool: 'codewhisperer', confidence: 0.98 },
+  { pattern: /^amazon-q/i, tool: 'amazon-q', confidence: 0.98 },
+  { pattern: /^sweep/i, tool: 'sweep', confidence: 0.98 },
+  { pattern: /^grit/i, tool: 'grit', confidence: 0.98 },
+  { pattern: /^codegen/i, tool: 'codegen', confidence: 0.95 },
+  // Generic bot patterns (match last as fallback)
+  { pattern: /\[bot\]$/i, tool: 'bot', confidence: 0.9 },
   { pattern: /-bot$/i, tool: 'bot', confidence: 0.8 },
 ];
 

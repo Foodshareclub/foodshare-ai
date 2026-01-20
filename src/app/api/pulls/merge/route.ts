@@ -3,19 +3,26 @@ import { ok, err, handleError, v, validate } from "@/lib/api";
 import { pr } from "@/lib/github";
 import { upsertPullRequest, type GitHubPullRequest } from "@/lib/pr-store";
 
-const MergeSchema = v.object({
-  owner: v.string().min(1),
-  repo: v.string().min(1),
-  pr_number: v.number().int().positive(),
-  merge_method: v.enum(["merge", "squash", "rebase"]).optional().default("squash"),
-  commit_title: v.string().optional(),
-  commit_message: v.string().optional(),
-});
+interface MergeInput {
+  owner: string;
+  repo: string;
+  pr_number: number;
+  merge_method?: "merge" | "squash" | "rebase";
+  commit_title?: string;
+  commit_message?: string;
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { owner, repo, pr_number, merge_method, commit_title, commit_message } = validate(MergeSchema, body);
+    const { owner, repo, pr_number, merge_method = "squash", commit_title, commit_message } = validate<MergeInput>(body, {
+      owner: v.slug,
+      repo: v.slug,
+      pr_number: v.posInt,
+      merge_method: v.oneOf("merge", "squash", "rebase"),
+      commit_title: v.optString,
+      commit_message: v.optString,
+    });
 
     // Merge the PR via GitHub API
     const result = await pr.merge(owner, repo, pr_number, {

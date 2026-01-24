@@ -1,6 +1,8 @@
+import type { ChatOptions } from "./groq";
+
 export async function chatWithOllama(
   prompt: string,
-  options?: { model?: string; temperature?: number }
+  options?: ChatOptions
 ): Promise<string> {
   const host = process.env.OLLAMA_HOST || "http://localhost:11434";
   const model = options?.model || process.env.OLLAMA_MODEL || "qwen2.5-coder:7b";
@@ -15,6 +17,12 @@ export async function chatWithOllama(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 55000); // 55s timeout
 
+  const messages: { role: "system" | "user"; content: string }[] = [];
+  if (options?.systemPrompt) {
+    messages.push({ role: "system", content: options.systemPrompt });
+  }
+  messages.push({ role: "user", content: prompt });
+
   try {
     const response = await fetch(`${host}/api/chat`, {
       method: "POST",
@@ -22,9 +30,9 @@ export async function chatWithOllama(
       signal: controller.signal,
       body: JSON.stringify({
         model,
-        messages: [{ role: "user", content: prompt }],
+        messages,
         stream: false,
-        options: { temperature, num_ctx: 4096 },
+        options: { temperature, num_ctx: options?.maxTokens || 4096 },
       }),
     });
 

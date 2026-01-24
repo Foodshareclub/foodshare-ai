@@ -29,6 +29,8 @@ export interface ChatOptions {
   temperature?: number;
   useReviewModel?: boolean;
   maxRetries?: number;
+  systemPrompt?: string;
+  maxTokens?: number;
 }
 
 export async function chatWithGroq(prompt: string, options?: ChatOptions): Promise<string> {
@@ -42,10 +44,17 @@ export async function chatWithGroq(prompt: string, options?: ChatOptions): Promi
   return llmCircuitBreaker.execute(async () => {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
+        const messages: { role: "system" | "user"; content: string }[] = [];
+        if (options?.systemPrompt) {
+          messages.push({ role: "system", content: options.systemPrompt });
+        }
+        messages.push({ role: "user", content: prompt });
+
         const response = await groq.chat.completions.create({
           model,
-          messages: [{ role: "user", content: prompt }],
+          messages,
           temperature: options?.temperature ?? 0.1,
+          ...(options?.maxTokens && { max_tokens: options.maxTokens }),
         });
         metrics.timing("llm_latency", start, { model });
         metrics.increment("llm_requests", 1, { model, status: "success" });

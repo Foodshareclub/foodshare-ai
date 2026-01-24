@@ -6,12 +6,30 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
+interface LineComment {
+  severity: "critical" | "high" | "medium" | "low" | "info";
+  body: string;
+  path: string;
+  line: number;
+}
+
+interface ReviewResult {
+  summary?: {
+    overview: string;
+    changes_description: string;
+    risk_assessment: string;
+    recommendations: string[];
+  };
+  line_comments?: LineComment[];
+  approval_recommendation?: "approve" | "request_changes" | "comment";
+}
+
 interface Review {
   id: string;
   repo_full_name: string;
   pr_number: number;
   status: string;
-  result: any;
+  result: ReviewResult | null;
   head_sha: string;
   is_incremental: boolean;
   created_at: string;
@@ -102,10 +120,10 @@ export default function ReviewsPage() {
     })
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-  const getSeverityIndicator = (result: any) => {
+  const getSeverityIndicator = (result: ReviewResult | null) => {
     if (!result?.line_comments) return { color: "bg-zinc-500", label: "No data" };
-    const critical = result.line_comments.filter((c: any) => c.severity === "critical").length;
-    const high = result.line_comments.filter((c: any) => c.severity === "high").length;
+    const critical = result.line_comments.filter((c) => c.severity === "critical").length;
+    const high = result.line_comments.filter((c) => c.severity === "high").length;
     const total = result.line_comments.length;
     if (critical > 0) return { color: "bg-red-500", label: `${critical} critical` };
     if (high > 0) return { color: "bg-orange-500", label: `${high} high` };

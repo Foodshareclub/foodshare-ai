@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { getPullRequestFiles, pr as githubPR } from "@/lib/github";
 import { analyzePR, PRContext } from "@/lib/analysis";
@@ -10,10 +10,17 @@ import type { PRData } from "@/lib/llm-detection";
 const WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
 
 function verifySignature(payload: string, signature: string | null): boolean {
-  if (!WEBHOOK_SECRET) return true;
+  if (!WEBHOOK_SECRET) {
+    console.error("GITHUB_WEBHOOK_SECRET not configured - rejecting webhook");
+    return false;
+  }
   if (!signature) return false;
   const expected = `sha256=${createHmac("sha256", WEBHOOK_SECRET).update(payload).digest("hex")}`;
-  return signature === expected;
+  try {
+    return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  } catch {
+    return false;
+  }
 }
 
 async function triggerWorker() {

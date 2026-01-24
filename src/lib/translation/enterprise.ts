@@ -1,9 +1,9 @@
-import { translationService } from '@/lib/translation';
+import { translationService, TranslationRequest } from '@/lib/translation';
 import { LLMTranslationProvider } from '@/lib/translation/llm-provider';
 
 // Enterprise translation provider for self-hosted LLMs
 class EnterpriseTranslationProvider extends LLMTranslationProvider {
-  async translate(request: any) {
+  async translate(request: TranslationRequest) {
     // Use enterprise model with enhanced prompts
     const result = await super.translate({
       ...request,

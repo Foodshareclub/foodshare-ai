@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { reviewPullRequest } from "@/lib/review";
 import { createClient } from "@/lib/supabase/server";
+import type { BatchReviewResult } from "@/types/github";
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,7 +32,9 @@ export async function POST(request: NextRequest) {
       })
     );
 
-    const completed = results.filter(r => r.status === "fulfilled").map(r => (r as any).value);
+    const completed = results
+      .filter((r): r is PromiseFulfilledResult<BatchReviewResult> => r.status === "fulfilled")
+      .map(r => r.value);
     const failed = results.filter(r => r.status === "rejected").length;
 
     return NextResponse.json({ completed, failed, total: reviews.length });

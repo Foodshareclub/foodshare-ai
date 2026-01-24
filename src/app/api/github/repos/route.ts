@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { GitHubRepository, RepoListItem } from "@/types/github";
 
 const GITHUB_API = "https://api.github.com";
 
@@ -23,9 +24,9 @@ export async function GET() {
     });
     const orgRepos = orgRes.ok ? await orgRes.json() : [];
 
-    const allRepos = [...userRepos, ...orgRepos]
-      .filter((r: any) => !r.archived)
-      .map((r: any) => ({
+    const allRepos: RepoListItem[] = ([...userRepos, ...orgRepos] as GitHubRepository[])
+      .filter((r) => !r.archived)
+      .map((r) => ({
         id: r.id,
         full_name: r.full_name,
         name: r.name,
@@ -33,11 +34,11 @@ export async function GET() {
         private: r.private,
         updated_at: r.updated_at,
       }))
-      .sort((a: any, b: any) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
 
     // Remove duplicates
-    const unique = allRepos.filter((r: any, i: number, arr: any[]) => 
-      arr.findIndex((x: any) => x.full_name === r.full_name) === i
+    const unique = allRepos.filter((r, i, arr) =>
+      arr.findIndex((x) => x.full_name === r.full_name) === i
     );
 
     return NextResponse.json({ repos: unique });

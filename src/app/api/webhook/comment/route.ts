@@ -1,15 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 import { chat } from "@/lib/llm";
 import { createReviewComment } from "@/lib/github";
 
 const WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
 
 function verifySignature(payload: string, signature: string | null): boolean {
-  if (!WEBHOOK_SECRET) return true;
+  if (!WEBHOOK_SECRET) {
+    console.error("GITHUB_WEBHOOK_SECRET not configured - rejecting webhook");
+    return false;
+  }
   if (!signature) return false;
   const expected = `sha256=${createHmac("sha256", WEBHOOK_SECRET).update(payload).digest("hex")}`;
-  return signature === expected;
+  try {
+    return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  } catch {
+    return false;
+  }
 }
 
 const CHAT_PROMPT = `You are an AI code reviewer assistant. A developer is replying to your review comment.

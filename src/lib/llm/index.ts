@@ -11,21 +11,25 @@ export async function chat(
   prompt: string,
   options?: LLMChatOptions
 ): Promise<string> {
-  const provider = options?.provider || (process.env.LLM_PROVIDER as LLMProvider) || "groq";
+  const defaultProvider = options?.provider || (process.env.LLM_DEFAULT_PROVIDER as LLMProvider) || (process.env.LLM_PROVIDER as LLMProvider) || "groq";
+  const fallbackProvider = process.env.LLM_FALLBACK_PROVIDER as LLMProvider | undefined;
 
-  if (provider === "ollama") {
-    try {
-      return await chatWithOllama(prompt, options);
-    } catch (err) {
-      if (process.env.GROQ_API_KEY) {
-        console.log("Ollama failed, falling back to Groq");
-        return chatWithGroq(prompt, options);
-      }
-      throw err;
+  const callProvider = async (provider: LLMProvider): Promise<string> => {
+    if (provider === "ollama") {
+      return chatWithOllama(prompt, options);
     }
-  }
+    return chatWithGroq(prompt, options);
+  };
 
-  return chatWithGroq(prompt, options);
+  try {
+    return await callProvider(defaultProvider);
+  } catch (err) {
+    if (fallbackProvider && fallbackProvider !== defaultProvider) {
+      console.log(`${defaultProvider} failed, falling back to ${fallbackProvider}`);
+      return callProvider(fallbackProvider);
+    }
+    throw err;
+  }
 }
 
 export { chatWithGroq, chatWithOllama };

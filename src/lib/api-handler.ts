@@ -17,7 +17,10 @@ export function apiHandler(
   handler: (req: NextRequest, context: { params?: Record<string, string> }) => Promise<Response>,
   options: ApiHandlerOptions = {}
 ) {
-  return async (req: NextRequest, context: { params?: Record<string, string> } = {}) => {
+  return async (req: NextRequest, context?: { params?: Promise<Record<string, string>> }) => {
+    // Handle Next.js 16+ async params
+    const resolvedParams = context?.params ? await context.params : {};
+    const resolvedContext = { params: resolvedParams };
     const requestId = randomUUID();
     const startTime = Date.now();
     
@@ -65,7 +68,7 @@ export function apiHandler(
         }
       }
 
-      const response = await handler(req, context);
+      const response = await handler(req, resolvedContext);
       
       metrics.timing('api.response_time', startTime, { 
         method: req.method, 

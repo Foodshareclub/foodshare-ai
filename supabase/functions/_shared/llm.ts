@@ -70,10 +70,24 @@ async function chatWithGroq(prompt: string, options?: ChatOptions): Promise<stri
 }
 
 async function chatWithOllama(prompt: string, options?: ChatOptions): Promise<string> {
-  const host = env("OLLAMA_HOST") || "http://localhost:11434";
+  const host = env("OLLAMA_HOST_EXTERNAL") || env("OLLAMA_HOST") || "http://localhost:11434";
   const model = options?.model || env("OLLAMA_MODEL") || "qwen2.5-coder:7b";
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
+  
+  // Authentication options
+  const apiKey = env("OLLAMA_API_KEY");
+  const bearerToken = env("OLLAMA_BEARER_TOKEN");
+  const basicUser = env("OLLAMA_BASIC_AUTH_USER");
+  const basicPass = env("OLLAMA_BASIC_AUTH_PASS");
+  
+  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  else if (bearerToken) headers["Authorization"] = `Bearer ${bearerToken}`;
+  else if (basicUser && basicPass) {
+    headers["Authorization"] = `Basic ${btoa(`${basicUser}:${basicPass}`)}`;
+  }
+
+  // Cloudflare Access
   const cfId = env("CF_ACCESS_CLIENT_ID"), cfSecret = env("CF_ACCESS_CLIENT_SECRET");
   if (cfId && cfSecret) {
     headers["CF-Access-Client-Id"] = cfId;

@@ -1,14 +1,9 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { handleError as baseHandleError, ValidationError } from "./errors";
 
-export class ApiError extends Error {
-  constructor(public statusCode: number, message: string) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
-
-export function ok<T>(data: T) {
-  return NextResponse.json(data);
+export function ok<T>(data: T, status = 200) {
+  return NextResponse.json(data, { status });
 }
 
 export function err(message: string, status = 400) {
@@ -16,31 +11,19 @@ export function err(message: string, status = 400) {
 }
 
 export function handleError(error: unknown) {
-  console.error(error);
-  if (error instanceof ApiError) {
-    return err(error.message, error.statusCode);
-  }
-  return err(error instanceof Error ? error.message : "Internal error", 500);
+  const result = baseHandleError(error);
+  return NextResponse.json(
+    { error: result.error, code: result.code, details: (result as any).details },
+    { status: result.statusCode }
+  );
 }
 
-export function validate<T>(data: unknown, schema: Record<string, (v: unknown) => boolean>): T {
-  if (!data || typeof data !== "object") throw new ApiError(400, "Invalid request body");
-  const obj = data as Record<string, unknown>;
-  for (const [key, validator] of Object.entries(schema)) {
-    if (!validator(obj[key])) throw new ApiError(400, `Invalid ${key}`);
-  }
-  return obj as T;
-}
+export const v = z;
 
-// Common validators
-export const v = {
-  string: (v: unknown) => typeof v === "string" && v.length > 0,
-  optString: (v: unknown) => v === undefined || typeof v === "string",
-  slug: (v: unknown) => typeof v === "string" && /^[\w.-]+$/.test(v),
-  posInt: (v: unknown) => typeof v === "number" && Number.isInteger(v) && v > 0,
-  bool: (v: unknown) => typeof v === "boolean",
-  optBool: (v: unknown) => v === undefined || typeof v === "boolean",
-  array: (v: unknown) => Array.isArray(v),
-  optArray: (v: unknown) => v === undefined || Array.isArray(v),
-  oneOf: <T extends string>(...vals: T[]) => (v: unknown) => v === undefined || vals.includes(v as T),
-};
+export function validate<T>(schema: z.ZodSchema<T>, data: unknown): T {
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    throw new ValidationError(result.error);
+  }
+  return result.data;
+}

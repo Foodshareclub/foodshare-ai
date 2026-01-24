@@ -11,6 +11,112 @@ services:
     networks:
       - cloudflared
 
+  ollama:
+    image: ollama/ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+    volumes:
+      - ./ollama-models:/root/.ollama/models
+    deploy:
+      resources:
+        limits:
+          memory: 12G
+    restart: unless-stopped
+    networks:
+      default:
+      cloudflared:
+        aliases:
+          - ollama
+
+  redis:
+    image: redis:7-alpine
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --tcp-keepalive 300
+      --timeout 0
+      --tcp-backlog 511
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1200M
+    restart: unless-stopped
+
+  redis-http:
+    build: ./redis-http
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - AUTH_TOKEN=${REDIS_HTTP_TOKEN}
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    restart: unless-stopped
+    networks:
+      - default
+      - cloudflared
+
+  translate:
+    build: ./translate-service
+    container_name: translate-service
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - OLLAMA_API_URL=https://ollama.foodshare.club/api/chat
+      - OLLAMA_TRANSLATE_API_URL=https://translate.foodshare.club
+      - OLLAMA_API_KEY=9c7b1cb38bc55affa916a5dd80de8d97ba160267e82330ecd7e829da67529006
+      - CF_ACCESS_CLIENT_ID=546b88a3efd36b53f35cd8508ba25560.access
+      - CF_ACCESS_CLIENT_SECRET=e483bb03a4d8916403693ed072a73b22343b901f11e79f383996fbe2dbe0192e
+      - API_KEYS=a0561ed547369f3d094f66d1bf5ce5974bf13cae4e6c481feabff1033b521b9b
+      - REDIS_URL=redis://redis:6379
+      - REDIS_POOL_SIZE=32
+      - RUST_LOG=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    depends_on:
+      ollama:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    networks:
+      - default
+      - cloudflared
+
+volumes:
+  redis-data:
+
 networks:
   cloudflared:
     external: true

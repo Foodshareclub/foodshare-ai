@@ -7,6 +7,7 @@ AI-powered code review system with enterprise-grade reliability, security, and s
 - **Automated Code Reviews**: AI-powered PR analysis with configurable depth
 - **Multi-Repository Support**: Manage multiple repos with custom configurations
 - **Incremental Reviews**: Smart diff analysis for efficient reviews
+- **Enterprise Translation**: Multi-language support with self-hosted LLM integration
 - **Queue System**: Reliable job processing with retry logic and DLQ
 - **Real-time Monitoring**: Health checks, structured logging, and metrics
 - **Enterprise Security**: Rate limiting, input validation, and audit trails
@@ -108,6 +109,27 @@ POST /api/review
 ### Check Job Status
 ```bash
 GET /api/jobs?status=pending
+```
+
+### Translation API
+```bash
+# Single translation
+POST /api/translate
+{
+  "text": "Hello world",
+  "targetLanguage": "es",
+  "quality": "high",
+  "domain": "technical"
+}
+
+# Batch translation
+POST /api/translate/batch
+{
+  "requests": [
+    {"text": "Hello", "targetLanguage": "es"},
+    {"text": "World", "targetLanguage": "fr"}
+  ]
+}
 ```
 
 ## 📈 Performance

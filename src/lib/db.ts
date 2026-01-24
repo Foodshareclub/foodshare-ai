@@ -61,4 +61,5 @@ export const tables = {
   passkeys: "passkeys",
   passkeyChallenges: "passkey_challenges",
   reviewLearnings: "review_learnings",
+  pullRequests: "pull_requests",
 } as const;

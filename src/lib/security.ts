@@ -15,10 +15,10 @@ export function securityHeaders() {
   // Permissions policy
   headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   
-  // Content Security Policy
+  // Content Security Policy - strict policy without unsafe-eval
   headers.set(
     'Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.supabase.co https://api.github.com;"
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.supabase.co https://api.github.com;"
   );
   
   return headers;

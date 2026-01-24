@@ -11,6 +11,7 @@ import {
 } from "./review/models";
 import { createClient } from "./supabase/server";
 import { analyzePR, getDepthPrompt, PRContext, ReviewDecision } from "./analysis";
+import type { ParsedPRData, GitHubLabel, GitHubFile } from "@/types/github";
 
 export type { CodeReviewResult as ReviewResult } from "./review/models";
 export type { ReviewDecision } from "./analysis";
@@ -58,7 +59,7 @@ export async function reviewPullRequest(
   config?: RepoConfig,
   options?: { depth?: "quick" | "standard" | "deep"; focus_areas?: string[] }
 ): Promise<CodeReviewResult & { headSha: string; isIncremental: boolean }> {
-  const prData = await getPullRequest(owner, repo, prNumber) as any;
+  const prData = await getPullRequest(owner, repo, prNumber) as ParsedPRData;
   const headSha = prData.head.sha;
 
   let diff: string;
@@ -224,17 +225,17 @@ export async function reviewAndPost(
   if (!options?.depth) {
     try {
       const [prData, prFiles] = await Promise.all([
-        getPullRequest(owner, repo, prNumber) as Promise<any>,
-        getPullRequestFiles(owner, repo, prNumber) as Promise<any[]>,
+        getPullRequest(owner, repo, prNumber) as Promise<ParsedPRData>,
+        getPullRequestFiles(owner, repo, prNumber) as Promise<GitHubFile[]>,
       ]);
       const ctx: PRContext = {
         files_changed: prData.changed_files || 0,
         additions: prData.additions || 0,
         deletions: prData.deletions || 0,
         title: prData.title || "",
-        labels: (prData.labels || []).map((l: any) => l.name || l),
+        labels: (prData.labels || []).map((l: GitHubLabel) => l.name),
         base_branch: prData.base?.ref || "main",
-        files: prFiles.map((f: any) => f.filename),
+        files: prFiles.map((f: GitHubFile) => f.filename),
       };
       analysis = analyzePR(ctx);
       reviewOptions = { depth: analysis.depth, focus_areas: analysis.focus_areas };

@@ -84,3 +84,32 @@ GITHUB_WEBHOOK_SECRET=xxx      # Optional, for webhook verification
 - **Rate Limit Handling**: Exponential backoff retry for Groq API limits
 - **Category-specific Prompts**: Security, Bug, Performance focus areas
 - **Dashboard UI**: Browse repos, view PRs, trigger reviews, configure settings
+
+## Translation Service
+
+External translation API available at `https://translate.foodshare.club`. Rust-based service with Redis caching, backed by Ollama LLM.
+
+### Test Translation
+```bash
+curl -X POST https://translate.foodshare.club/api/translate \
+  -H "X-API-Key: <API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello world","targetLanguage":"es"}'
+```
+
+### Endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check with Redis/LLM status |
+| `/ready` | GET | Readiness probe |
+| `/metrics` | GET | Prometheus metrics |
+| `/api/translate` | POST | Translate text (requires X-API-Key header) |
+
+### Local Development
+```bash
+# Start translation infrastructure
+docker compose up -d ollama redis translate llm-proxy
+
+# Check service health
+curl http://localhost:8080/health
+```
